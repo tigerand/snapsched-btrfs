@@ -2,10 +2,9 @@
 
 declare -A CONFIG
 export CONFIG
-ETC=/etc
-export ETCDIR=$ETC/snapsched
+export ETCDIR=/etc/snapsched
 export CFGFILE=$ETCDIR/config
-export CRONTAB=$ETC/cron.d/snapsched
+export CRONTAB=/etc/cron.d/snapsched
 export UMNT
 
 export OSILENT=
@@ -113,12 +112,12 @@ ssched_list_sources()
 }
 
 
-# delete specific cron entry in $ETC/cron.{hour,dai,week,month}ly/ directories
+# delete specific cron entry in /etc/cron.{hour,dai,week,month}ly/ directories
 _ssched_remove_cron()
 {
 	local NSRC=$1
 	local INT=$2
-	local CRND=$ETC/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
+	local CRND=/etc/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
 
 	rm -f "$CRND"
 }
@@ -143,19 +142,10 @@ ssched_delete_cronjobs()
 ssched_create_cronjobs()
 {
 	local NSRC=$1
-	local -l NO_READ_CFG=`expr substr $2 1 1`
+	local -l NO_READ_CFG=${2:0:1}
 
-	if [ -z "$NSRC" ] ; then
-		echo "usage: create_cronjobs <source-name>"
+	if \! _ssched_validate_nsrc NSRC "usage: create_cronjobs <source-name>" $NO_READ_CFG; then
 		return 1
-	fi
-	if expr index "$NSRC" / >/dev/null ; then
-		NSRC=`basename $NSRC`
-		# strips off trailing slashes too
-	fi
-
-	if [ -z "$NO_READ_CFG" -o \( "$NO_READ_CFG" != y \) ] ; then
-		_ssched_read_config
 	fi
 
 	# check to see if we have this in our config
@@ -173,29 +163,29 @@ ssched_create_cronjobs()
 		fi
 
 		case $JOB in
-		H)
-			INTRVAL=hourly;;
-		D)
-			INTRVAL=daily;;
-		W)
-			INTRVAL=weekly;;
-		M)
-			INTRVAL=monthly;;
+			H)
+				INTRVAL=hourly;;
+			D)
+				INTRVAL=daily;;
+			W)
+				INTRVAL=weekly;;
+			M)
+				INTRVAL=monthly;;
 		esac
 
-		_ssched_submit_cron $INTRVAL $NSRC
+		_ssched_submit_cron $NSRC $INTRVAL
 	done
 }
 
 
-# initialize package crontab file in $ETC/cron.d
-#    normally this should not be needed, as minimum $ETC/cron.d/snapsched
+# initialize package crontab file in /etc/cron.d
+#    normally this should not be needed, as minimum /etc/cron.d/snapsched
 #    file should be included in package
 _ssched_init_pkgcrontab()
 {
 
-	if [ ! -r $CRONTAB ] ; then
-		cat <<-PKGCRONTABEND > $CRONTAB
+	if [ ! -r /etc/cron.d/snapsched ] ; then
+		cat <<-PKGCRONTABEND > /etc/cron.d/snapsched
 			# snapsched package crontab
 			# WARNING: this file is programmatically modified by the snapsched
 			#     command without benefit of locking, so, if you hand edit, you
@@ -209,11 +199,11 @@ _ssched_init_pkgcrontab()
 }
 
 
-# remove one line of package crontab file in $ETC/cron.d
+# remove one line of package crontab file in /etc/cron.d
 # args: NSRC {hourly,daily,weekly,monthly}
 _ssched_rm_pkgcrontab()
 {
-	local CFILE=$CRONTAB
+	local CFILE=/etc/cron.d/snapsched
 
 	if [ ! -r $CFILE ] ; then
 		return 1
@@ -224,11 +214,11 @@ _ssched_rm_pkgcrontab()
 }
 
 
-# modify entry in package crontab file in $ETC/cron.d
+# modify entry in package crontab file in /etc/cron.d
 # args: NSRC {hourly,daily,weekly,monthly} DARG CTIMES CPROG
 _ssched_mod_pkgcrontab()
 {
-	local CFILE=$CRONTAB
+	local CFILE=/etc/cron.d/snapsched
 	local NSRC="$1"
 
 	if [ ! -r $CFILE ] ; then
@@ -240,7 +230,7 @@ _ssched_mod_pkgcrontab()
 
 	# FIXME should use the sed 'c' command
 	echo "# $NSRC $2 DARG:'$3'" >> $CFILE
-	echo -e "$4\troot\t$5 $PRE/lib/snapsched/scheduled $NSRC $2" >> $CFILE
+	echo -e "$4\troot\t$5 /root/lib/snapsched/scheduled $NSRC $2" >> $CFILE
 }
 
 
@@ -442,9 +432,9 @@ _ssched_submit_cron()
 {
 	# args: interval {hourly, daily, weekly, monthly}, NSCR
 
-	local INT=$1
-	local NSRC=$2
-	local CRND=$ETC/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
+	local NSRC=$1
+	local INT=$2
+	local CRND=/etc/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
 
 	# work around for stupid cron restriction on file names. of all the stupid.
 
@@ -479,8 +469,14 @@ ssched_set_btrfspath()
 }
 
 # check the NSRC argument for validity
-#    args: nsrc "usage message" [no-read-config]
-#    returns normalized nsrc value
+#    args: <nameref of nsrc variable> "usage message" [no-read-config]
+#    side effect: normalized nsrc value
+#
+#    uses indirect variable method of passing nsrc so that the normalized
+#    value can be passed back without having to use stdout.  using stdout
+#    basically requires that the function be run in a sub-process, which
+#    means that the reading of the config file doesn't load the CONFIG
+#    array for the rest of the program.
 _ssched_validate_nsrc()
 {
 	local UMSG
@@ -509,7 +505,10 @@ _ssched_validate_nsrc()
 	fi
 
 	if [ "$NO_READ_CFG" != y ] ; then
-		_ssched_read_config
+		_ssched_read_config || {
+			echo "Failure reading config file.  Perhaps it doesn't exist."
+			return 1
+		}
 	fi
 
 	# check to see if we have this in our config
@@ -623,13 +622,19 @@ ssched_mod_maxsnapcount()
 
 	echo "$MSG"
 
+	_ssched_write_config
+
 	CONFIG["SSRC_${NSRC}%${INTRVAL}_MSC"]=$NMAX
 	if [ "$NMAX" -eq 0 ] ; then
 		unset CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]
 		unset CONFIG[SSRC_$NSRC%${INTRVAL}_TOD]
 		_ssched_rm_pkgcrontab $NSRC $INT
+	else
+		# if creating a new scheduled snapshot, make sure it's 
+		if [ "$OMAX" -eq 0 ] ; then
+			_ssched_submit_cronjob $NSRC $INT
+		fi
 	fi
-	_ssched_write_config
 }
 
 ####
@@ -733,7 +738,7 @@ ssched_set_dailies()
 
 	_ssched_mod_pkgcrontab "$NSRC" daily "$DAYS" "$CTIMES"
 
-	# make sure the old $ETC/cron.daily is history
+	# make sure the old /etc/cron.daily is history
 	_ssched_remove_cron $NSRC daily
 
 	CONFIG[SSRC_$NSRC%D_DAT]="$DAYS"
@@ -824,7 +829,7 @@ ssched_set_weeklies()
 
 	_ssched_mod_pkgcrontab "$NSRC" weekly "$DAY" "$CTIMES" ""
 
-	# make sure the old $ETC/cron.weekly is history
+	# make sure the old /etc/cron.weekly is history
 	_ssched_remove_cron $NSRC weekly
 
 	CONFIG[SSRC_$NSRC%W_DAT]="$DAY"
@@ -932,7 +937,7 @@ ssched_set_monthlies()
 
 	_ssched_mod_pkgcrontab "$NSRC" monthly "$DOM" "$CTIMES" "$CPROG"
 
-	# make sure the old $ETC/cron.monthly is history
+	# make sure the old /etc/cron.monthly is history
 	_ssched_remove_cron $NSRC monthly
 
 	CONFIG[SSRC_$NSRC%M_DAT]="$DOM"
@@ -946,6 +951,7 @@ ssched_set_monthlies()
 ssched_add_source()
 {
 	local JOB INTRVAL SRCDIR NSRC H D W M
+	local -l ANS
 
 	# arguments:
 
@@ -967,23 +973,40 @@ ssched_add_source()
 	NSRC=$1
 	shift
 
-	_ssched_read_config
+	if _ssched_validate_nsrc NSRC 2>/dev/null ; then
+		echo "Source '$NSRC' already exists in config file."
+		read -p "Are you sure you want to overwrite it? [Ny] " ANS
+		if [ -z "$ANS" ] ; then
+			return 0
+		fi
+		ANS=${ANS:0:1}
+		if [ "$ANS" -ne y ] ; then
+			return 0
+		fi
+	fi
 
 	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
 	SRCDIR=${CONFIG[SNAP_MOUNT_DIR]}/$NSRC
 
 	if [ ! -d $SRCDIR ] ; then
-		echo "Couldn't find $SRCDIR.  Fail.  Bye."
+		echo "Couldn't find $SRCDIR.  You have to have a volume or snapshot to make snapshots of, asshole."
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
-		exit 1
+		return 1
 	fi
 
 	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
-
 	# this will overwrite any previous config for this source
 	CONFIG["SSRC_$NSRC"]=$SRCDIR
+
+	local ILEN=`expr length SSRC_$NSRC%`
+	for K in "${!CONFIG[@]}" ; do
+		if [ `expr match SSRC_$NSRC% $K` -gt "$ILEN" ] ; then
+			unset CONFIG[$K]
+		fi
+	done 
+
 
 	# process the max snap count for hourlies
 	if [ "$1" -lt 0 ] ; then
