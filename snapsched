@@ -1,0 +1,124 @@
+#!/bin/bash
+
+export PRE=/root
+
+# uber snapshced command
+export SSCHED_UBER=y
+
+CMD=$1
+shift
+
+if [ -z "$CMD" ] ; then
+	CMD=help
+fi
+
+# load the library routines
+. $PRE/lib/snapsched/snapsched-funcs
+
+if [ \( "$CMD" = "--list-funcs" \) -o \
+	\( "$CMD" = "-h" \) -o \
+	\( "$CMD" = "help" \) -o \
+	\( "$CMD" = "--help" \) ] ; then
+	echo "snapsched <cmd>"
+	echo "List of available commands:"
+	echo
+	echo "init_config  :   Initialize the snapsched config file.  All previous"
+	echo "                 data in config file is erased."
+
+	echo "print_config :   Print out the contents of the config file"
+
+	echo "add_source   :   Add a btrfs filesystem subvolume to the config file "
+	echo "                 for scheduled snapshots.  Snapshot times and dates"
+	echo "                 will be the defaults."
+	echo "                 Arguments: <filesystem-name> h d w m [db1 ...]"
+	echo "                 The basename of the filesystem must be specified"
+	echo "                    in <filesystem-name>"
+	echo "                 h, d, w and m are a single integer 0-99, indicating"
+	echo "                    the maximum number of snapshots for the interval"
+	echo "                    period of hourly, daily, weekly and monthly."
+	echo "                    When the maximum number is reached, no more"
+	echo "                    snapshots for the enclosing period will be"
+	echo "                    performed.  So, if if the 'h' number is 20,"
+	echo "                    hourly snapshots will stop being performed after"
+	echo "                    20 hours.  A number of 25 means that one hourly"
+	echo "                    be left undeleted when a new day, and a new batch"
+	echo "                    of hourlies is started."
+	echo "                    Do not specify > +1 for the enclosing period"
+	echo "                 Optional db arguments can be one or more of"
+	echo "                    'mysql' or 'postgresql'.  postgresql can be"
+	echo "                    suffixed by '-M.m' where M is the major version,"
+	echo "                    and m is minor version number.  snapsched will"
+	echo "                    attempt to pause just that version of postgres."
+
+	echo "list_sources :   List all the sources in the config file as words"
+	echo "                 Option -v lists sources one per line along with the"
+	echo "                 config options for that source"
+
+	echo "remove_source :  Remove a filesystem from the config file"
+	echo "                 Argument: <filesystem-name>"
+
+	echo "create_cronjobs : Create cron entries for <filesystem-name>"
+	echo "                  Create or replace pre-existing cron entries for"
+	echo "                  <filesystem-name> source."
+
+	echo "delete_cronjobs : Remove all cronjob files from"
+	echo "                  /etc/cron.{hourly,daily,weekly,monthly}"
+	echo "                  Called with no arguments, deletes them ALL."
+	echo "                  Called with one argument <filesystem-name> deletes"
+	echo "                      just the cron jobs for that filesystem."
+
+	echo "set_btrfspath :  Set the main mount point for the btrfs filesystem"
+	echo "                 Arg: <btfs-mount-point>"
+	echo "                 Changes the mount point in the config file for the
+                   subvolid=0 mounting of the btrfs filesystem used
+                   for ALL OPERATIONS.  Use carefully.  Default is
+                   '/media/btrfs'.  This is sanity checked at run time
+                   by attempting to do a mount, hence, the entry in
+                   /etc/fstab must already exist to mount the btrfs
+                   filesystem at that point with the subvolid=0 mount
+                   option.  All scheduled snapshots will be created under
+                   this mount point, and all source subvolumes specified
+                   in the add_source command must be in this directory
+                   (not subdirectories)."
+
+	echo "set_dailies :  Set the time and day-of-week for daily snapshots"
+	echo "                 Args: <fs> <days> [<time-of-day>]"
+	echo "                 fs is the file system subvolume to be snapped, as"
+	echo "                   already configured with add_source."
+	echo "                 days is the day[s] of the week you would like"
+	echo "                   this daily snapshot to happen.  Range is 1-7,
+                   but some crontab-like strings may be used, such
+                   as '1,3,5,7' or 'mon-fri' or 'mon,tue,thu,sat' and so on.
+                   Very little validation can be done for such strings, so
+                   make sure you get them right.  two aliases are allowed:
+                   'weekdays' is equivalent to 'mon-fri', and
+                   'weekend' is equivalent to 'sat,sun'.
+                   '*' can be used, but it must be double quoted, ie.,
+                   like \\\* or '\*'"
+	echo "                 ToD is the HH:MM format of the hour and minute to
+                   fire the snapshot on the day in question.  default: 00:00
+                   You can put '+NN' where NN is number of minutes after
+                   00:00 you want the snapshot to fire.  HH and MM both must
+                   be TWO DIGITS, so use leading zeroes where necessary."
+
+	echo "set_monthlies :  Set the time and day-of-month for monthly snapshots"
+	echo "                 Args: <fs> <day-of-month> [<time-of-day>]"
+	echo "                 fs is the file system subvolume to be snapped, as"
+	echo "                   already configured."
+	echo "                 day-of-month is the day of the month you would like"
+	echo "                   this monthly snapshot to happen.  Range is 1-31,
+                   but some months have fewer days than 31.
+                   Some have as few as 28.  Synonyms such as 'last'
+                   or 'last-sat' or 'last-weekday' or 'last-weekend'
+                   can be used.  last means the last day of each month.
+                   last-<day-of-week> means the last day of that week
+                   in the month.  Three letter day names as understood
+                   by the date/cron commands only, please."
+	echo "                 ToD is the HH:MM format of the hour and minute to
+                   fire the snapshot on the day in question.  default: 22:00"
+
+	exit 0
+fi
+
+eval ssched_$CMD "$@"
+

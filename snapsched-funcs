@@ -1,0 +1,1095 @@
+#!/bin/bash
+
+declare -A CONFIG
+export CONFIG
+export ETCDIR=/etc/snapsched
+export CFGFILE=$ETCDIR/config
+export CRONTAB=/etc/cron.d/snapsched
+export UMNT
+
+export OSILENT=
+
+# utility to write optional text to stdout or what. ev.
+# uses global OSILENT variable
+omsg ()
+{
+	if [ -z "$OSILENT" ] ; then
+		if [ "$#" -ge 1 ] ; then
+			echo "$@"
+		else
+			cat
+		fi
+	elif [ "$#" -le 1 ] ; then
+		cat >/dev/null
+	fi
+}
+
+# read in the config file
+_ssched_read_config()
+{
+	if [ -f $CFGFILE ] ; then
+		. $CFGFILE
+	else
+		return 1
+	fi
+}
+
+_ssched_output_config()
+{
+
+	for X in "${!CONFIG[@]}" ; do
+		echo "CONFIG[$X]=\"${CONFIG[$X]}\""
+	done
+}
+
+_ssched_write_config()
+{
+
+	# clear config file
+	mv -f $CFGFILE ${CFGFILE}.bak 2>/dev/null
+
+	_ssched_output_config > $CFGFILE
+}
+
+# give us a list of snapshot sources from the config
+_ssched_list_srcs()
+{
+	echo ${!CONFIG[*]} | grep -o 'SSRC_[^ ]*' | grep -v \% | sed 's/^SSRC_//'
+}
+
+# mount the btrfs subvolid=0 filesystem
+_ssched_mount_rootvol()
+{
+	local BPATH="$1"
+
+	if [ ! "$BPATH" ] ; then
+		return 1
+	fi
+
+	if grep -q "$BPATH" /proc/mounts ; then
+		UMNT=
+	else
+		UMNT=yes
+		mount "$BPATH"
+	fi
+}
+
+# umount the btrfs subvolid=0 filesystem
+_ssched_umount_rootvol()
+{
+	local BPATH=$1
+
+	if [ "$UMNT" ] ; then
+		umount $BPATH
+	fi
+}
+
+
+#command
+ssched_list_sources()
+{
+	local SN SRCS
+
+	_ssched_read_config
+
+	SRCS=`_ssched_list_srcs`
+
+	if [ "$1" = -v ] ; then
+		echo -e "\t       Max\tMax\tMax\tMax\tHourly\tDaily\t\tWeekly\tMonthly"
+		echo -e "Fileset\t    hourlies dailies weeklies monthlies  TOD\tDAYS/TOD\tDAY/TOD DOM/TOD Databases"
+
+		for S in $SRCS ; do
+			if [ `expr length $S` -gt 12 ] ; then
+				SN=`expr substr $S 1 12`
+			else
+				SN="$S"
+			fi
+			printf " %-14s%2d%9d%8d%8d\t%-8s%-16s%-8s%-8s%s\n" "$SN" ${CONFIG[SSRC_$S%H_MSC]} ${CONFIG[SSRC_$S%D_MSC]} ${CONFIG[SSRC_$S%W_MSC]} ${CONFIG[SSRC_$S%M_MSC]} "${CONFIG[SSRC_$S%H_TOD]-unset}" "${CONFIG[SSRC_$S%D_DAT]-n}/${CONFIG[SSRC_$S%D_TOD]-a}" "${CONFIG[SSRC_$S%W_DAT]-n}/${CONFIG[SSRC_$S%W_TOD]-a}" "${CONFIG[SSRC_$S%M_DAT]-n}/${CONFIG[SSRC_$S%M_TOD]-a}" `echo "${CONFIG[SSRC_$S%DBS]}" | sed 's/ /,/g'`
+		done
+	else
+		echo $SRCS
+	fi
+}
+
+
+# delete specific cron entry in /etc/cron.{hour,dai,week,month}ly/ directories
+_ssched_remove_cron()
+{
+	local NSRC=$1
+	local INT=$2
+	local CRND=/etc/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
+
+	rm -f "$CRND"
+}
+
+
+#command -- to delete cron entries
+ssched_delete_cronjobs()
+{
+	local NSRC=$1
+
+	if [ -z "$NSRC" ] ; then
+		NSRC='*'
+	fi
+
+	for I in hour dai week month ; do
+		_ssched_remove_cron "$NSRC" ${I}ly
+	done
+}
+
+
+#command -- to create cron entries
+ssched_create_cronjobs()
+{
+	local NSRC=$1
+	local -l NO_READ_CFG=`expr substr $2 1 1`
+
+	if [ -z "$NSRC" ] ; then
+		echo "usage: create_cronjobs <source-name>"
+		return 1
+	fi
+	if expr index "$NSRC" / >/dev/null ; then
+		NSRC=`basename $NSRC`
+		# strips off trailing slashes too
+	fi
+
+	if [ -z "$NO_READ_CFG" -o \( "$NO_READ_CFG" != y \) ] ; then
+		_ssched_read_config
+	fi
+
+	# check to see if we have this in our config
+
+	if [ -z "${CONFIG[SSRC_$NSRC]}" ] ; then
+		echo "Fail: cannot locate '$NSRC' in config file"
+		return 1
+	fi
+
+	for JOB in H D W M ; do
+
+		# if max snap count is 0, then snaps at that interval are disabled
+		if [ ${CONFIG["SSRC_${NSRC}%${JOB}_MSC"]} -eq 0 ] ; then
+			continue
+		fi
+
+		case $JOB in
+		H)
+			INTRVAL=hourly;;
+		D)
+			INTRVAL=daily;;
+		W)
+			INTRVAL=weekly;;
+		M)
+			INTRVAL=monthly;;
+		esac
+
+		_ssched_submit_cron $INTRVAL $NSRC
+	done
+}
+
+
+# initialize package crontab file in /etc/cron.d
+#    normally this should not be needed, as minimum /etc/cron.d/snapsched
+#    file should be included in package
+_ssched_init_pkgcrontab()
+{
+
+	if [ ! -r /etc/cron.d/snapsched ] ; then
+		cat <<-PKGCRONTABEND > /etc/cron.d/snapsched
+			# snapsched package crontab
+			# WARNING: this file is programmatically modified by the snapsched
+			#     command without benefit of locking, so, if you hand edit, you
+			#      might mess it up.  You have been warned sufficiently.
+			SHELL=/bin/bash
+			PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+		PKGCRONTABEND
+
+	fi
+}
+
+
+# remove one line of package crontab file in /etc/cron.d
+# args: NSRC {hourly,daily,weekly,monthly}
+_ssched_rm_pkgcrontab()
+{
+	local CFILE=/etc/cron.d/snapsched
+
+	if [ ! -r $CFILE ] ; then
+		return 1
+	fi
+
+	# entry may not exist
+	sed -i "/^# $1 $2/,+1 d" $CFILE || true
+}
+
+
+# modify entry in package crontab file in /etc/cron.d
+# args: NSRC {hourly,daily,weekly,monthly} DARG CTIMES CPROG
+_ssched_mod_pkgcrontab()
+{
+	local CFILE=/etc/cron.d/snapsched
+	local NSRC="$1"
+
+	if [ ! -r $CFILE ] ; then
+		_ssched_init_pkgcrontab
+	fi
+
+	# previous entry may not exist
+	_ssched_rm_pkgcrontab $NSRC $2 || true
+
+	# FIXME should use the sed 'c' command
+	echo "# $NSRC $2 DARG:'$3'" >> $CFILE
+	echo -e "$4\troot\t$5 /root/lib/snapsched/scheduled $NSRC $2" >> $CFILE
+}
+
+
+#command -- to initialize the config file
+ssched_init_config()
+{
+
+	if [ ! -d $ETCDIR ] ; then
+		mkdir -p $ETCDIR
+	fi
+
+	# will overwrite anything existing
+
+	CONFIG["SNAP_MOUNT_DIR"]=/media/btrfs
+	CONFIG["SNAP_BASE_DIR"]=.ssched
+	CONFIG["SNAP_HOURLY_DIR"]=hourly
+	CONFIG["SNAP_DAILY_DIR"]=daily
+	CONFIG["SNAP_WEEKLY_DIR"]=weekly
+	CONFIG["SNAP_MONTHLY_DIR"]=monthly
+
+	_ssched_write_config
+	ssched_delete_cronjobs
+	_ssched_init_pkgcrontab
+}
+
+#command
+ssched_print_config()
+{
+	_ssched_read_config && _ssched_output_config || {
+		echo "Error reading config file.   Perhaps it doesn't exist."
+	}
+}
+
+_ssched_mysql_pause()
+{
+	local VNAME RESTO LCNT=0
+
+	mysqladmin --defaults-extra-file=/etc/mysql/debian.cnf ping >/dev/null 2>&1
+	if [ "$?" -ne 0 ] ; then
+		echo "mysqld is not alive, cannot quiesce database!"
+		return 1
+	fi
+
+	# -n means flush the buffer after each query
+	coproc mysql --defaults-extra-file=/etc/mysql/debian.cnf -s -n
+
+	if [ "$?" -ne 0 ] ; then
+		echo "Failed to start coprocess: $0"
+		return 1
+	fi
+
+	# save the value for innodb_max_dirty_pages_pct
+	echo "show global variables;" > /dev/fd/${COPROC[1]}
+	export MDPP=74
+	while read -t 1 < /dev/fd/${COPROC[0]} VNAME MDPP ; do
+		if [ "$VNAME" = innodb_max_dirty_pages_pct ] ; then
+			break
+		fi
+	done
+	while read -t 1 < /dev/fd/${COPROC[0]} RESTO ; do : ; done
+	# echo "Saving innodb_max_dirty_pages_pct variable value $MDPP"
+
+	# set it to zero
+	echo "set global innodb_max_dirty_pages_pct=0;" > /dev/fd/${COPROC[1]}
+
+	# flush and lock the tables
+	echo "flush tables with read lock;" > /dev/fd/${COPROC[1]}
+
+	# clear out the buffer
+	while read -t 1 < /dev/fd/${COPROC[0]} RESTO ; do : ; done
+
+	# wait for quiescence of innodb engine
+	echo "show engine innodb status\G" > /dev/fd/${COPROC[1]}
+	sleep 0.25
+#echo "in thread wait loop"
+	while read -t 1 < /dev/fd/${COPROC[0]} RESTO ; do
+#echo "RESTO='$RESTO'"
+		echo "$RESTO" | grep -q "^Main thread" || continue
+		echo "$RESTO" |	grep -q "state: waiting for server activity" && break
+#echo "non-matching RESTO: '$RESTO'"
+# echo "$RESTO" |	grep -q "state: sleeping" && break
+
+		# check to see if we need to bail 'cuz ain't hapnin
+		LCNT=$(($LCNT + 1))
+		if [ "$LCNT" -gt 30 ] ; then
+			echo "Waiting for mysql innodb engine to quiesce timed out."
+			echo "Cannot quiesce mysql database."
+			echo "set global innodb_max_dirty_pages_pct=$MDPP;" > /dev/fd/${COPROC[1]}
+			echo "unlock tables;" > /dev/fd/${COPROC[1]}
+			echo -E "\q"  > /dev/fd/${COPROC[1]}
+#echo "out thread wait loop"
+			return 1
+		fi
+
+		while read -t 1 < /dev/fd/${COPROC[0]} TESTO ; do
+			[ -z "$TESTO" ] && break
+			TESTO=""
+		done
+		RESTO=
+		# oh yeah, just spin for freakin ever
+		echo "show engine innodb status\G" > /dev/fd/${COPROC[1]}
+		sleep 0.25
+#echo "LOOPING ==============================================================="
+	done
+#echo "out thread wait loop"
+	while read -t 1 < /dev/fd/${COPROC[0]} RESTO ; do : ; done
+#echo "mysql DB is paused"
+	return 0
+}
+
+_ssched_mysql_unpause()
+{
+
+#echo "COPROC_ = '$COPROC'"
+#echo "COPROC = '${COPROC[*]}'"
+
+	if [ "${COPROC[1]}" ] ; then
+		# restore innodb_max_dirty_pages_pct setting
+		#echo "Restoring innodb_max_dirty_pages_pct variable value to $MDPP"
+		echo "set global innodb_max_dirty_pages_pct=$MDPP;" > /dev/fd/${COPROC[1]}
+
+		# unlock the tables
+		echo "unlock tables;" > /dev/fd/${COPROC[1]}
+		#echo "mysql DB is unpaused"
+
+		# quit out of mysql client coprocess
+		echo -E "\q"  > /dev/fd/${COPROC[1]}
+	fi
+
+	# might be some noise here
+}
+
+_ssched_pause_dbs()
+{
+	local CFGDBS="SSRC_${1}%DBS"
+	local PES
+
+	if [ -z "$1" ] ; then
+		# nothing to do here
+		return 0
+	fi
+
+	for DBP in ${CONFIG["$CFGDBS"]} ; do
+		case $DBP in
+			mysql)
+				_ssched_mysql_pause
+				PES=$?
+				;;
+			postgres*)
+				#echo magic postgres incant to pause $DBP dbs
+				PES=$?
+				;;
+			*)
+				# FIXME nothing to see here
+				;;
+		esac
+	done
+
+	return $PES
+}
+
+
+_ssched_unpause_dbs()
+{
+	local CFGDBS="SSRC_${1}%DBS"
+
+	if [ -z "$1" ] ; then
+		# nothing to do here
+		return 0
+	fi
+
+	for DBP in ${CONFIG["$CFGDBS"]} ; do
+		case $DBP in
+			mysql)
+				_ssched_mysql_unpause
+				;;
+			postgres*)
+				#echo magic postgres incant to unpause $DBP
+				;;
+			*)
+				# FIXME nothing to see here
+				;;
+		esac
+	done
+}
+
+
+# convert the NSRC source name to a file name acceptable by the cron idiots
+_ssched_nsrc2cronfile()
+{
+	local SED_P1="s/@/at/g"
+	local SED_P2="s/\./-/g"
+	echo "$NSRC" | sed -e "$SED_P1" -e "$SED_P2" 
+}
+
+
+# submit cron jobs for scheduled filesystem snapshots
+_ssched_submit_cron()
+{
+	# args: interval {hourly, daily, weekly, monthly}, NSCR
+
+	local INT=$1
+	local NSRC=$2
+	local CRND=/etc/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
+
+	# work around for stupid cron restriction on file names. of all the stupid.
+
+	# this will overwrite existing, on purpose
+	>$CRND
+	cat >>$CRND <<THERE
+#!/bin/sh
+MAILTO=root
+
+$PRE/lib/snapsched/scheduled $NSRC $INT
+THERE
+	chmod 755 $CRND
+}
+
+
+# change base path for btrfs filesystem
+#command
+ssched_set_btrfspath()
+{
+	_ssched_read_config
+
+	_ssched_mount_rootvol $1 || {
+		echo "Fail.  Couldn't mount '$1', or bad path."
+		_ssched_umount_rootvol $1
+		exit 1
+	}
+	_ssched_umount_rootvol $1
+
+	CONFIG[SNAP_MOUNT_DIR]=$1
+
+	_ssched_write_config
+}
+
+# check the NSRC argument for validity
+#    args: nsrc "usage message" [no-read-config]
+#    returns normalized nsrc value
+_ssched_validate_nsrc()
+{
+	local UMSG
+	local -l NO_READ_CONFIG # convert to lowercase on assignment
+
+	if [ `uname -n` = bleys ] ; then
+		local LSRC
+		eval LSRC=\${$1} # poor man's nameref functionality.  very poor man.
+	else
+		local -n LSRC=$1
+	fi
+	UMSG="$2"
+	NO_READ_CFG="$3"
+
+	if [ -z "$LSRC" ] ; then
+		echo "$UMSG" >>/dev/stderr
+		return 1
+	fi
+	if expr index "$LSRC" / >/dev/null ; then
+		LSRC=`basename $LSRC`
+		# strips off trailing slashes too
+	fi
+
+	if [ "${#NO_READ_CFG}" -gt 1 ] ; then
+		NO_READ_CFG="${NO_READ_CFG:0:1}"
+	fi
+
+	if [ "$NO_READ_CFG" != y ] ; then
+		_ssched_read_config
+	fi
+
+	# check to see if we have this in our config
+
+	if [ -z "${CONFIG[SSRC_$LSRC]}" ] ; then
+		echo "Fail: cannot locate '$LSRC' in config file" >>/dev/stderr
+		return 1
+	fi
+	if [ `uname -n` = bleys ] ; then
+		eval $1=$LSRC
+	fi
+}
+
+
+# validate against max snap count
+# args: nsrc msc intervals
+_ssched_valid_min_msc()
+{
+	if [ "$2" -lt 1 ] ; then
+		echo "Max snap count for '$1' $3 is set too low: $2"
+		echo "No changes made.  Use mod_maxsnapcount to change."
+		return 1
+	fi
+}
+
+
+# change the max snap count for a particular source and interval
+#command
+ssched_mod_maxsnapcount()
+{
+	local NSRC
+	local INT
+	local NMAX
+	local USTR MSG PLURAL
+
+	USTR='usage: mod_maxsnapcount <file-system> <interval> <new max>\ninterval: one of hourly, daily, weekly, monthly\nnew-max: the new max snapcount'
+
+	if [ "$#" -lt 3 ] ; then
+		echo -e "$USTR"
+		return 1
+	fi
+
+	NSRC="$1"
+
+	_ssched_validate_nsrc NSRC "$USTR" ||
+		return 1
+
+	INT="$2"
+	NMAX="$3"
+
+	case "$INT" in
+		hourly)
+			INTRVAL=H
+			if [ "$NMAX" -eq 0 ] ; then
+				:
+			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 36 \) ] ; then
+				echo "Ill advised or illegal $INT max snapcount value of '$NMAX'"
+				echo "Disregarding.  Pick another value, or use dailies to suppliment."
+				return 1
+			fi
+			;;
+		daily)
+			INTRVAL=D
+			if [ "$NMAX" -eq 0 ] ; then
+				:
+			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 14 \) ] ; then
+				echo "Ill advised or illegal $INT max snapcount value of '$NMAX'"
+				echo "Disregarding.  Pick another value, or use weeklies to suppliment."
+				return 1
+			fi
+			;;
+		weekly)
+			INTRVAL=W
+			if [ "$NMAX" -eq 0 ] ; then
+				:
+			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 10 \) ] ; then
+				echo "Ill advised or illegal $INT max snapcount value of '$NMAX'"
+				echo "Disregarding.  Pick another value, or use monthlies to suppliment."
+				return 1
+			fi
+			;;
+		monthly)
+			INTRVAL=M
+			if [ "$NMAX" -eq 0 ] ; then
+				:
+			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 24 \) ] ; then
+				echo "Ill advised or illegal $INT max snapcount value of '$NMAX'"
+				echo "Disregarding.  Pick a value from 2-24."
+				return 1
+			fi
+			;;
+		*)
+			echo -e "$USTR"
+			echo "Bad interval value: '$INT'"
+			return 1
+			;;
+	esac
+
+	PLURAL=`echo $INT | sed 's/y$/ies/'`
+	OMAX=${CONFIG[SSRC_${NSRC}%${INTRVAL}_MSC]}
+
+	if [ $NMAX = $OMAX ] ; then
+		echo "No change for '$NSRC' $PLURAL"
+		return 0
+	fi
+	if [ "$NMAX" -eq 0 ] ; then
+		MSG="Turning $PLURAL OFF for source '$NSRC'"
+	else
+		MSG="Changing $INT max snapcount for '$NSRC' from '$OMAX' to '$NMAX'"
+	fi
+
+	echo "$MSG"
+
+	CONFIG["SSRC_${NSRC}%${INTRVAL}_MSC"]=$NMAX
+	if [ "$NMAX" -eq 0 ] ; then
+		unset CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]
+		unset CONFIG[SSRC_$NSRC%${INTRVAL}_TOD]
+		_ssched_rm_pkgcrontab $NSRC $INT
+	fi
+	_ssched_write_config
+}
+
+####
+# set_{hour,dai,week,month}lies commands
+#
+# These commands set specific times for the various scheduled snapshots
+# to take place.  They can be combined with the MAX snapcount setting for
+# their interval (hourly, daily, weekly, monthly) to fine tune a particular
+# interval's scheduled snapping behavior.
+# 
+# Example: to set up daily snapshots of a filesystem named 'work' that
+# most suits your work habits, or those who's data is on the filesystem,
+# you decide you want the daily snapshots to fire at 11:00PM after most
+# everyone has finished working for the day.  People rarely work on
+# weekends, so you don't need to do daily snapshots on those days.  So,
+# set max_snapcount (via the add_source command or the not-developed-yet
+# mod_max command) to 6, to keep one extra just in case, and set the dailes
+# to mon-fri 23:00.  You could also set the weeklies to complement this,
+# say to fire on Sunday, which in a way would give you an extra snapshot
+# to cover any work that happened on the weekend.
+
+
+# set the daily snapshot fire time/day in the crontab file.
+#
+# default daily snapshot time is 12:00am (midnight) when set with this.
+# when not set with this, it defaults to time of cron.daily job.  that
+# might change one day.
+#
+# args: <file-system-name> <days> [<time-of-day>] [no-read-config]
+# the no-read-config is for use of this function by other internal functions
+#
+#command
+ssched_set_dailies()
+{
+	local NSRC DAYS TOD CTIMES
+	local -l NO_READ_CFG # converts to lowercase on assignment
+	local USMG="usage: set_dailies <source-name> <days> [<tod>]"
+	local THOUR=0 TMIN=1
+
+	if [ "$#" -lt 2 ] ; then
+		echo "$USMG"
+		return 1
+	fi
+
+	NSRC="$1"
+	DAYS="$2"
+	shift;shift
+	if [ "$#" -eq 2 ] ; then
+		TOD="$1"
+		NO_READ_CFG="$2"
+	elif [ "$#" -eq 1 ] ; then
+		if [ "$1" = YES ] ; then
+			NO_READ_CFG="$1"
+		else
+			TOD="$1"
+		fi
+	fi
+	# shorten variable to one char
+	if [ "${#NO_READ_CFG}" -gt 1 ] ; then
+		NO_READ_CFG="${NO_READ_CFG:0:1}"
+	fi
+
+	# validate NSRC, and read config file if necessary
+	_ssched_validate_nsrc NSRC "$USMG" "$NO_READ_CFG" ||
+		return 1
+
+	# validate against max snap count
+	_ssched_valid_min_msc $NSRC ${CONFIG["SSRC_$NSRC%D_MSC"]} dailies ||
+		return 1
+
+
+	if [ "$TOD" ] ; then
+		case "$TOD" in
+			[0-9][0-9]:[0-9][0-9])
+				set -- ${TOD/:/ }
+				# get rid of the leading zeroes
+				THOUR=`printf "%d" "$1"`
+				TMIN=`printf "%d" "$2"`
+			   ;;
+			*)
+				echo "$UMSG"
+				return 1
+				;;
+		esac
+	fi
+
+	# these should also be validated against max snap count
+	case "$DAYS" in
+		weekdays)
+			CTIMES="$TMIN $THOUR * * mon-fri"
+			;;
+		weekend)
+			# strange, but hey
+			CTIMES="$TMIN $THOUR * * sat,sun"
+			;;
+		*)
+			# FIXME validate things like mon-thu or 1-5 or 1,3,5,7
+			CTIMES="$TMIN $THOUR * * $DAYS"
+			;;
+	esac
+
+	_ssched_mod_pkgcrontab "$NSRC" daily "$DAYS" "$CTIMES"
+
+	# make sure the old /etc/cron.daily is history
+	_ssched_remove_cron $NSRC daily
+
+	CONFIG[SSRC_$NSRC%D_DAT]="$DAYS"
+	CONFIG[SSRC_$NSRC%D_TOD]="$TOD"
+	_ssched_write_config
+}
+
+
+# set the weekly snapshot fire time/day in the crontab file.  may place
+#   a bit 'o code into the crontab file
+#
+# default weekly snapshot time is sat 12:00am (midnight) when set with this.
+# when not set with this, it defaults to time of cron.weekly job.  that
+# might change one day.
+#
+# args: <file-system-name> <day> [<time-of-day>] [no-read-config]
+# the no-read-config is for use of this function by other internal functions
+#
+#command
+ssched_set_weeklies()
+{
+	local NSRC TOD CTIMES
+	local -l DAY NO_READ_CFG # converts to lowercase on assignment
+	local THOUR=0 TMIN=1
+	local UMSG="usage: set_weeklies <source-name> <day> [<tod>]"
+
+	if [ "$#" -lt 2 ] ; then
+		echo "$UMSG"
+		return 1
+	fi
+
+	NSRC="$1"
+	DAY="$2"
+	shift;shift
+	if [ "$#" -eq 2 ] ; then
+		TOD="$1"
+		NO_READ_CFG="$2"
+	elif [ "$#" -eq 1 ] ; then
+		if [ "$1" = YES ] ; then
+			NO_READ_CFG="$1"
+		else
+			TOD="$1"
+		fi
+	fi
+	# shorten variable to one char
+	if [ "${#NO_READ_CFG}" -gt 1 ] ; then
+		NO_READ_CFG="${NO_READ_CFG:0:1}"
+	fi
+
+	# validate NSRC, and read config file if necessary
+	_ssched_validate_nsrc NSRC "$USMG" "$NO_READ_CFG" ||
+		return 1
+
+	# validate against max snap count
+	_ssched_valid_min_msc $NSRC ${CONFIG["SSRC_$NSRC%W_MSC"]} weeklies ||
+		return 1
+
+
+	if [ "$TOD" ] ; then
+		case "$TOD" in
+			[0-9][0-9]:[0-9][0-9])
+				set -- ${TOD/:/ }
+				# get rid of the leading zeroes
+				THOUR=`printf "%d" "$1"`
+				TMIN=`printf "%d" "$2"`
+			   ;;
+			*)
+				echo "$UMSG"
+				return 1
+				;;
+		esac
+	fi
+
+	# these should also be validated against max snap count
+	case "$DAY" in
+		mon|tue|wed|thu|fri|sat|sun)
+			CTIMES="$TMIN $THOUR * * $DAY"
+			;;
+		[1-7])
+			# numerical day specifier
+			CTIMES="$TMIN $THOUR * * $DAY"
+			;;
+		*)
+			echo "$UMSG"
+			return 1
+			;;
+	esac
+
+	_ssched_mod_pkgcrontab "$NSRC" weekly "$DAY" "$CTIMES" ""
+
+	# make sure the old /etc/cron.weekly is history
+	_ssched_remove_cron $NSRC weekly
+
+	CONFIG[SSRC_$NSRC%W_DAT]="$DAY"
+	CONFIG[SSRC_$NSRC%W_TOD]="$TOD"
+	_ssched_write_config
+}
+
+
+# set the montly snapshot fire time/day in the crontab file.  may place
+#   a bit 'o code into the crontab file
+#
+# args: <file-system-name> <day-of-month> [<time-of-day>] [no-read-config]
+# the no-read-config is for use of this function by other internal functions
+#
+#command
+ssched_set_monthlies()
+{
+	local NSRC DOM TOD
+	local -l NO_READ_CFG # converts to lowercase on assignment
+	local THOUR=22 TMIN=5
+	local CPROG CTIMES
+	local UMSG="usage: set_monthlies <source-name> <dom> [<tod>]"
+
+	if [ "$#" -lt 2 ] ; then
+		echo "$UMSG"
+		return 1
+	fi
+
+	NSRC="$1"
+	DOM="$2"
+	shift;shift
+	if [ "$#" -eq 2 ] ; then
+		TOD="$1"
+		NO_READ_CFG="$2"
+	elif [ "$#" -eq 1 ] ; then
+		if [ "$1" = YES ] ; then
+			NO_READ_CFG="$1"
+		else
+			TOD="$1"
+		fi
+	fi
+	if [ "$NO_READ_CFG" ] ; then
+		NO_READ_CFG="${NO_READ_CFG:0:1}"
+	fi
+
+	# validate NSRC, and read config file if necessary
+	_ssched_validate_nsrc NSRC "$UMSG" "$NO_READ_CONFIG" ||
+		return 1
+
+	# validate against max snap count
+	_ssched_valid_min_msc $NSRC ${CONFIG["SSRC_$NSRC%M_MSC"]} monthlies ||
+		return 1
+
+	if [ "$TOD" ] ; then
+		case "$TOD" in
+			[0-9][0-9]:[0-9][0-9])
+				set -- ${TOD/:/ }
+				# get rid of the leading zeroes
+				THOUR=`printf "%d" "$1"`
+				TMIN=`printf "%d" "$2"`
+			   ;;
+			*)
+				echo "$UMSG"
+				return 1
+				;;
+		esac
+	fi
+
+	case "$DOM" in
+		last-weekday)
+			CPROG='[ "`$date +\%e`" = $(ncal -h | egrep '\''Mo|Tu|We|Th|Fr'\'' | sed '\''s/^.* \([0-9]\+\) *$/\1/'\'' | sort | tail -1) ] && '
+			CTIMES="$TMIN $THOUR 26-31 * mon-fri"
+			;;
+		last-weekend)
+			CPROG='[ "`$date +\%e`" = $(ncal -h | egrep '\''Su|Sa'\'' | sed '\''s/^.* \([0-9]\+\) *$/\1/'\'' | sort | tail -1) ] && '
+			CTIMES="$TMIN $THOUR 23-31 * sat,sun"
+			;;
+		last-*)
+			local -l LDAY
+			local SDAY
+			LDAY=`echo $DOM | sed 's/^last-//'`
+			echo $LDAY | egrep -q 'sat|sun|mon|tue|wed|thu|fri' || {
+				echo "I don't understand that one: '$DOM'"
+				echo "Check out the help message for acceptable 'last' values"
+				return 1
+			}
+			SDAY=`echo $LDAY | sed 's/.$//'`
+			CPROG='[ "`$date +\%e`" = $(ncal -h | grep -i '$SDAY' | sed '\''s/^.* \([0-9]\+\) *$/\1/'\'') ] && '
+			CTIMES="$TMIN $THOUR 22-31 * $LDAY"
+			;;
+		last)
+			CPROG='[ "`$date +\%e`" = $(cal -h | sed '\''/^ *$/d'\'' | tail -1 | sed '\''s/^.* \([23][018]\) *$/\1/'\'') ] && '
+			CTIMES="$TMIN $THOUR 28-31 * *"
+			;;
+		[1-9]|1[0-9]|2[0-9]|3[01])
+			CPROG=
+			CTIMES="$TMIN $THOUR $DOM * *"
+			;;
+		*)
+			echo "I don't understand that one: '$DOM'"
+			echo "Check out the help message for acceptable numerical values"
+			return 1
+			;;
+	esac
+
+	_ssched_mod_pkgcrontab "$NSRC" monthly "$DOM" "$CTIMES" "$CPROG"
+
+	# make sure the old /etc/cron.monthly is history
+	_ssched_remove_cron $NSRC monthly
+
+	CONFIG[SSRC_$NSRC%M_DAT]="$DOM"
+	CONFIG[SSRC_$NSRC%M_TOD]="$TOD"
+	_ssched_write_config
+}
+
+
+# add a subvolume to the config for scheduled snapshots
+#command
+ssched_add_source()
+{
+	local JOB INTRVAL SRCDIR NSRC H D W M
+
+	# arguments:
+
+	# name   h d w m [db1 ...dbn]
+	# examples:
+	#   ssched_add_source r00t 25 6 5 13 mysql postgresql-9.1
+	#   ssched_add_source h0me 24 8 0 12
+
+	# check caller
+	if [ "$SSCHED_UBER" != y ] ; then
+		return 1
+	fi
+
+	if [ "$#" -lt 5 ] ; then
+		echo "usage: add_source name   h d w m [db1 ...dbn]"
+		return 1
+	fi
+
+	NSRC=$1
+	shift
+
+	_ssched_read_config
+
+	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+
+	SRCDIR=${CONFIG[SNAP_MOUNT_DIR]}/$NSRC
+
+	if [ ! -d $SRCDIR ] ; then
+		echo "Couldn't find $SRCDIR.  Fail.  Bye."
+		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		exit 1
+	fi
+
+	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+
+
+	# this will overwrite any previous config for this source
+	CONFIG["SSRC_$NSRC"]=$SRCDIR
+
+	# process the max snap count for hourlies
+	if [ "$1" -lt 0 ] ; then
+		echo "Overriding max snap count for hourlies to 0 (disabled)"
+		H=0
+	elif [ "$1" -gt 25 ] ; then
+		echo "Overriding max snap count for hourlies to 25"
+		H=25
+	else
+		H=$1
+	fi
+	CONFIG["SSRC_${NSRC}%H_MSC"]=$H
+	shift
+
+	# process the max snap count for dailies
+	if [ "$1" -lt 0 ] ; then
+		echo "Overriding max snap count for dailies to 0 (disabled)"
+		D=0
+	elif [ "$1" -gt 8 ] ; then
+		echo "Overriding max snap count for dailies to 8"
+		D=8
+	else
+		D=$1
+	fi
+	CONFIG["SSRC_${NSRC}%D_MSC"]=$D
+	shift
+
+	# process the max snap count for weeklies
+	if [ "$1" -lt 0 ] ; then
+		echo "Overriding max snap count for weeklies to 0 (disabled)"
+		W=0
+	elif [ "$1" -gt 6 ] ; then
+		echo "Overriding max snap count for weeklies to 6"
+		W=8
+	else
+		W=$1
+	fi
+	CONFIG["SSRC_${NSRC}%W_MSC"]=$W
+	shift
+
+	# process the max snap count for monthlies
+	if [ "$1" -lt 0 ] ; then
+		echo "Overriding max snap count for monthlies to 0 (disabled)"
+		M=0
+	elif [ "$1" -gt 13 ] ; then
+		echo "Overriding max snap count for monthlies to 13"
+		M=13
+	else
+		M=$1
+	fi
+	CONFIG["SSRC_${NSRC}%M_MSC"]=$M
+	shift
+
+	# process the DBs argument
+	CONFIG["SSRC_${NSRC}%DBS"]="$*"
+
+	_ssched_write_config
+
+	ssched_create_cronjobs $NSRC yes
+}
+
+# remove a subvolume to the config for scheduled snapshots
+#command
+ssched_remove_source()
+{
+	local JOB INTRVAL SRCDIR NSRC
+
+	# arguments: filesystem name
+
+	# check caller
+	if [ "$SSCHED_UBER" != y ] ; then
+		return 1
+	fi
+
+	NSRC=$1
+
+	if [ -z "$NSRC" ] ; then
+		echo "Not enough arguments."
+		exit 1
+	fi
+
+	_ssched_read_config
+
+	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+
+	SRCDIR=${CONFIG[SNAP_MOUNT_DIR]}/$NSRC
+
+	if [ ! -d $SRCDIR ] ; then
+		echo "Couldn't find $SRCDIR.  Fail.  Bye."
+		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		exit 1
+	fi
+
+	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+
+
+	# delete them
+	unset CONFIG["SSRC_$NSRC"]
+	unset CONFIG["SSRC_${NSRC}%H_MSC"]
+	unset CONFIG["SSRC_${NSRC}%D_MSC"]
+	unset CONFIG["SSRC_${NSRC}%W_MSC"]
+	unset CONFIG["SSRC_${NSRC}%M_MSC"]
+	unset CONFIG["SSRC_${NSRC}%DBS"]
+
+	_ssched_write_config
+
+	ssched_delete_cronjobs $NSRC
+
+	# FIXME what about deleting the scheduled snapshots?!?
+}

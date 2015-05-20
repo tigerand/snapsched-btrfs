@@ -1,0 +1,149 @@
+#!/bin/bash
+
+export PRE=/root
+
+MAILTO=root
+# exec 2>&1
+
+# create the scheduled snapshots.  called by cron.
+
+# load the library routines
+. $PRE/lib/snapsched/snapsched-funcs
+
+# load the config file
+
+_ssched_read_config || {
+	echo "Error reading config file."
+	exit 1
+}
+
+# first arg is snapshot source
+
+NSSRC=$1
+SSRC=${CONFIG["SSRC_$NSSRC"]}
+shift
+
+# second arg is frequency
+FREQ=$1
+shift
+
+declare -u freq
+
+freq=$FREQ
+
+if [ -z "$SSRC" ] ; then
+	echo "Scheduled snapshot $freq called for '$NSSRC' but no such source exists in config file."
+	exit 1
+fi
+
+# don't spam email for hourlies
+if [ "$FREQ" != hourly ] ; then
+	OSILENT=
+	:
+else
+	OSILENT=--quiet
+	:
+fi
+
+omsg "$freq snapshot job for '$NSSRC' at `date '+%F %T'`"
+
+case $FREQ in
+	hourly)
+		L=H
+		DATESTR=`date +%Y-%m-%d`
+		INTSTR=`date +%H`
+		;;
+	daily)
+		L=D
+		DATESTR=`date +%Y-%m`
+		INTSTR=`date +%d`
+		PREV=hourly/`date +%Y-%m-%d --date=yesterday`
+		;;
+	weekly)
+		L=W
+		DATESTR=`date +%Y-%m`
+		INTSTR=`date +%W`
+		;;
+	monthly)
+		L=M
+		DATESTR=`date +%Y`
+		INTSTR=`date +%m`
+		;;
+	*)
+		echo "*scheduled* called with unknown argument: '$FREQ'"
+		exit 1
+		;;
+esac
+
+MAX_SCNT=${CONFIG[SSRC_${NSSRC}%${L}_MSC]}
+
+if [ "$MAX_SCNT" -le 0 ] ; then
+	# this shouldn't be getting called
+	exit 1
+fi
+
+
+TBASE="${CONFIG["SNAP_MOUNT_DIR"]}/${CONFIG["SNAP_BASE_DIR"]}/$NSSRC/$FREQ"
+TDIR="${TBASE}/${DATESTR}_${INTSTR}"
+
+_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
+	echo "Unable to mount root volume ${CONFIG[SNAP_MOUNT_DIR]}"
+	echo "Perhaps it needs to be added in /etc/fstab?  Snapsched requires that."
+	exit 1
+}
+
+# make necessary directories, if any, and then snap it
+
+if [ ! -d "$TBASE" ] ; then
+	mkdir -p "$TBASE" || {
+		echo "Failed to create the snapsched storage directory $TBASE"
+		echo "Cannot create snapshot, exiting...."
+		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		exit 1
+	}
+fi
+
+# the question here is, do we continue to make new snap shots during
+# this period, and just delete the oldest snapshot in this period, or do
+# we just stop making new snapshots?
+
+# for now, delete oldest then make new snapshot
+
+if [ `echo ${TBASE}/* | wc -w` -ge "$MAX_SCNT" ] ; then
+
+	# remove oldest first
+	OLDSNAP=`\ls $TBASE | head -1`
+
+	omsg "Deleting:"
+	omsg -e "\tReached max snap count for $NSSRC $FREQ of $MAX_SCNT, hence"
+
+	#echo -e "\tbtrfs sub del -c '$TBASE/$OLDSNAP'"
+	btrfs sub del -c "$TBASE/$OLDSNAP" 2>&1 | sed 's/^/\t/' | omsg
+
+	ES=$?
+	if [ "$ES" -ne 0 ] ; then
+		echo -e "\tFAILure deleting the oldest snapshot '$TBASE/$OLDSNAP': $ES"
+		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		exit $ES
+	fi
+	# output a blank line for formatting
+	omsg ""
+fi
+
+# snap it
+omsg "Snapping:"
+
+# pause databases
+_ssched_pause_dbs $NSSRC
+ES=$?
+
+#echo -e "\tbtrfs sub snap -r '$SSRC' '$TDIR'"
+btrfs sub snap -r "$SSRC" "$TDIR" 2>&1 | sed 's/^/\t/' | omsg
+
+# if [ "$ES" -eq 0 ] ; then
+	# unpause databases
+	_ssched_unpause_dbs $NSSRC
+# fi
+
+_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+

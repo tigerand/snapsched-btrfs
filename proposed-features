@@ -1,0 +1,9 @@
+create package /etc/cron.d file to get away from anacron and
+cron.{hour,dai,week,month}ly files and set times.  then add ability to
+set the times and days for hourly, daily, weekly, and monthly.
+
+snapshot log, displayable from snapsched command
+
+code to deal with pre-existing snapshot with same name as the new one.
+
+
