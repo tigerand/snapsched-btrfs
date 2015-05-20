@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export PRE=/root
+export PRE=/usr/local
 
 # uber snapshced command
 export SSCHED_UBER=y

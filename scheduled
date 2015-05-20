@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export PRE=/root
+export PRE=/usr/local
 
 MAILTO=root
 # exec 2>&1

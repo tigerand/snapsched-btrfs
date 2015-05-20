@@ -2,9 +2,10 @@
 
 declare -A CONFIG
 export CONFIG
-export ETCDIR=/etc/snapsched
+ETC=/etc
+export ETCDIR=$ETC/snapsched
 export CFGFILE=$ETCDIR/config
-export CRONTAB=/etc/cron.d/snapsched
+export CRONTAB=$ETC/cron.d/snapsched
 export UMNT
 
 export OSILENT=
@@ -112,12 +113,12 @@ ssched_list_sources()
 }
 
 
-# delete specific cron entry in /etc/cron.{hour,dai,week,month}ly/ directories
+# delete specific cron entry in $ETC/cron.{hour,dai,week,month}ly/ directories
 _ssched_remove_cron()
 {
 	local NSRC=$1
 	local INT=$2
-	local CRND=/etc/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
+	local CRND=$ETC/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
 
 	rm -f "$CRND"
 }
@@ -187,14 +188,14 @@ ssched_create_cronjobs()
 }
 
 
-# initialize package crontab file in /etc/cron.d
-#    normally this should not be needed, as minimum /etc/cron.d/snapsched
+# initialize package crontab file in $ETC/cron.d
+#    normally this should not be needed, as minimum $ETC/cron.d/snapsched
 #    file should be included in package
 _ssched_init_pkgcrontab()
 {
 
-	if [ ! -r /etc/cron.d/snapsched ] ; then
-		cat <<-PKGCRONTABEND > /etc/cron.d/snapsched
+	if [ ! -r $CRONTAB ] ; then
+		cat <<-PKGCRONTABEND > $CRONTAB
 			# snapsched package crontab
 			# WARNING: this file is programmatically modified by the snapsched
 			#     command without benefit of locking, so, if you hand edit, you
@@ -208,11 +209,11 @@ _ssched_init_pkgcrontab()
 }
 
 
-# remove one line of package crontab file in /etc/cron.d
+# remove one line of package crontab file in $ETC/cron.d
 # args: NSRC {hourly,daily,weekly,monthly}
 _ssched_rm_pkgcrontab()
 {
-	local CFILE=/etc/cron.d/snapsched
+	local CFILE=$CRONTAB
 
 	if [ ! -r $CFILE ] ; then
 		return 1
@@ -223,11 +224,11 @@ _ssched_rm_pkgcrontab()
 }
 
 
-# modify entry in package crontab file in /etc/cron.d
+# modify entry in package crontab file in $ETC/cron.d
 # args: NSRC {hourly,daily,weekly,monthly} DARG CTIMES CPROG
 _ssched_mod_pkgcrontab()
 {
-	local CFILE=/etc/cron.d/snapsched
+	local CFILE=$CRONTAB
 	local NSRC="$1"
 
 	if [ ! -r $CFILE ] ; then
@@ -239,7 +240,7 @@ _ssched_mod_pkgcrontab()
 
 	# FIXME should use the sed 'c' command
 	echo "# $NSRC $2 DARG:'$3'" >> $CFILE
-	echo -e "$4\troot\t$5 /root/lib/snapsched/scheduled $NSRC $2" >> $CFILE
+	echo -e "$4\troot\t$5 $PRE/lib/snapsched/scheduled $NSRC $2" >> $CFILE
 }
 
 
@@ -443,7 +444,7 @@ _ssched_submit_cron()
 
 	local INT=$1
 	local NSRC=$2
-	local CRND=/etc/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
+	local CRND=$ETC/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
 
 	# work around for stupid cron restriction on file names. of all the stupid.
 
@@ -732,7 +733,7 @@ ssched_set_dailies()
 
 	_ssched_mod_pkgcrontab "$NSRC" daily "$DAYS" "$CTIMES"
 
-	# make sure the old /etc/cron.daily is history
+	# make sure the old $ETC/cron.daily is history
 	_ssched_remove_cron $NSRC daily
 
 	CONFIG[SSRC_$NSRC%D_DAT]="$DAYS"
@@ -823,7 +824,7 @@ ssched_set_weeklies()
 
 	_ssched_mod_pkgcrontab "$NSRC" weekly "$DAY" "$CTIMES" ""
 
-	# make sure the old /etc/cron.weekly is history
+	# make sure the old $ETC/cron.weekly is history
 	_ssched_remove_cron $NSRC weekly
 
 	CONFIG[SSRC_$NSRC%W_DAT]="$DAY"
@@ -931,7 +932,7 @@ ssched_set_monthlies()
 
 	_ssched_mod_pkgcrontab "$NSRC" monthly "$DOM" "$CTIMES" "$CPROG"
 
-	# make sure the old /etc/cron.monthly is history
+	# make sure the old $ETC/cron.monthly is history
 	_ssched_remove_cron $NSRC monthly
 
 	CONFIG[SSRC_$NSRC%M_DAT]="$DOM"
