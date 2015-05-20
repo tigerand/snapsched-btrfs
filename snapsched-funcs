@@ -143,19 +143,10 @@ ssched_delete_cronjobs()
 ssched_create_cronjobs()
 {
 	local NSRC=$1
-	local -l NO_READ_CFG=`expr substr $2 1 1`
+	local -l NO_READ_CFG=${2:0:1}
 
-	if [ -z "$NSRC" ] ; then
-		echo "usage: create_cronjobs <source-name>"
+	if \! _ssched_validate_nsrc NSRC "usage: create_cronjobs <source-name>" $NO_READ_CFG; then
 		return 1
-	fi
-	if expr index "$NSRC" / >/dev/null ; then
-		NSRC=`basename $NSRC`
-		# strips off trailing slashes too
-	fi
-
-	if [ -z "$NO_READ_CFG" -o \( "$NO_READ_CFG" != y \) ] ; then
-		_ssched_read_config
 	fi
 
 	# check to see if we have this in our config
@@ -173,17 +164,17 @@ ssched_create_cronjobs()
 		fi
 
 		case $JOB in
-		H)
-			INTRVAL=hourly;;
-		D)
-			INTRVAL=daily;;
-		W)
-			INTRVAL=weekly;;
-		M)
-			INTRVAL=monthly;;
+			H)
+				INTRVAL=hourly;;
+			D)
+				INTRVAL=daily;;
+			W)
+				INTRVAL=weekly;;
+			M)
+				INTRVAL=monthly;;
 		esac
 
-		_ssched_submit_cron $INTRVAL $NSRC
+		_ssched_submit_cron $NSRC $INTRVAL
 	done
 }
 
@@ -433,7 +424,7 @@ _ssched_nsrc2cronfile()
 {
 	local SED_P1="s/@/at/g"
 	local SED_P2="s/\./-/g"
-	echo "$NSRC" | sed -e "$SED_P1" -e "$SED_P2" 
+	echo "$NSRC" | sed -e "$SED_P1" -e "$SED_P2"
 }
 
 
@@ -442,8 +433,8 @@ _ssched_submit_cron()
 {
 	# args: interval {hourly, daily, weekly, monthly}, NSCR
 
-	local INT=$1
-	local NSRC=$2
+	local NSRC=$1
+	local INT=$2
 	local CRND=$ETC/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
 
 	# work around for stupid cron restriction on file names. of all the stupid.
@@ -479,8 +470,14 @@ ssched_set_btrfspath()
 }
 
 # check the NSRC argument for validity
-#    args: nsrc "usage message" [no-read-config]
-#    returns normalized nsrc value
+#    args: <nameref of nsrc variable> "usage message" [no-read-config]
+#    side effect: normalized nsrc value
+#
+#    uses indirect variable method of passing nsrc so that the normalized
+#    value can be passed back without having to use stdout.  using stdout
+#    basically requires that the function be run in a sub-process, which
+#    means that the reading of the config file doesn't load the CONFIG
+#    array for the rest of the program.
 _ssched_validate_nsrc()
 {
 	local UMSG
@@ -509,7 +506,10 @@ _ssched_validate_nsrc()
 	fi
 
 	if [ "$NO_READ_CFG" != y ] ; then
-		_ssched_read_config
+		_ssched_read_config || {
+			echo "Failure reading config file.  Perhaps it doesn't exist."
+			return 1
+		}
 	fi
 
 	# check to see if we have this in our config
@@ -623,13 +623,19 @@ ssched_mod_maxsnapcount()
 
 	echo "$MSG"
 
+	_ssched_write_config
+
 	CONFIG["SSRC_${NSRC}%${INTRVAL}_MSC"]=$NMAX
 	if [ "$NMAX" -eq 0 ] ; then
 		unset CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]
 		unset CONFIG[SSRC_$NSRC%${INTRVAL}_TOD]
 		_ssched_rm_pkgcrontab $NSRC $INT
+	else
+		# if creating a new scheduled snapshot, make sure it's
+		if [ "$OMAX" -eq 0 ] ; then
+			_ssched_submit_cronjob $NSRC $INT
+		fi
 	fi
-	_ssched_write_config
 }
 
 ####
@@ -946,6 +952,7 @@ ssched_set_monthlies()
 ssched_add_source()
 {
 	local JOB INTRVAL SRCDIR NSRC H D W M
+	local -l ANS
 
 	# arguments:
 
@@ -967,23 +974,40 @@ ssched_add_source()
 	NSRC=$1
 	shift
 
-	_ssched_read_config
+	if _ssched_validate_nsrc NSRC 2>/dev/null ; then
+		echo "Source '$NSRC' already exists in config file."
+		read -p "Are you sure you want to overwrite it? [Ny] " ANS
+		if [ -z "$ANS" ] ; then
+			return 0
+		fi
+		ANS=${ANS:0:1}
+		if [ "$ANS" -ne y ] ; then
+			return 0
+		fi
+	fi
 
 	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
 	SRCDIR=${CONFIG[SNAP_MOUNT_DIR]}/$NSRC
 
 	if [ ! -d $SRCDIR ] ; then
-		echo "Couldn't find $SRCDIR.  Fail.  Bye."
+		echo "Couldn't find $SRCDIR.  You have to have a volume or snapshot to make snapshots of, asshole."
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
-		exit 1
+		return 1
 	fi
 
 	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
-
 	# this will overwrite any previous config for this source
 	CONFIG["SSRC_$NSRC"]=$SRCDIR
+
+	local ILEN=`expr length SSRC_$NSRC%`
+	for K in "${!CONFIG[@]}" ; do
+		if [ `expr match SSRC_$NSRC% $K` -gt "$ILEN" ] ; then
+			unset CONFIG[$K]
+		fi
+	done
+
 
 	# process the max snap count for hourlies
 	if [ "$1" -lt 0 ] ; then
