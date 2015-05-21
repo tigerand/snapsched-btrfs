@@ -1,5 +1,15 @@
 #!/bin/bash
 
+if [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
+	# we're screwed
+	OLDBASH=true
+elif [ "${BASH_VERSINFO[1]}" -lt 3 ] ; then
+	# we're still screwed (PIPESTATUS)
+	OLDBASH=true
+else
+	OLDBASH=false
+fi
+
 export PRE=/usr/local
 
 MAILTO=root
@@ -122,7 +132,8 @@ if [ `echo ${TBASE}/* | wc -w` -ge "$MAX_SCNT" ] ; then
 	#echo -e "\tbtrfs sub del -c '$TBASE/$OLDSNAP'"
 	btrfs sub del -c "$TBASE/$OLDSNAP" 2>&1 | sed 's/^/\t/' | omsg
 
-	ES=${PIPESTATUS[0]}
+	ES=$?
+	$OLDBASH || ES=${PIPESTATUS[0]}
 	if [ "$ES" -ne 0 ] ; then
 		serr -e "\tFAILure deleting the oldest snapshot '$TBASE/$OLDSNAP': $ES"
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
@@ -142,6 +153,8 @@ PES=$?
 #echo -e "\tbtrfs sub snap -r '$SSRC' '$TDIR'"
 btrfs sub snap -r "$SSRC" "$TDIR" 2>&1 | sed 's/^/\t/' | omsg
 
+ES=$?
+$OLDBASH || ES=${PIPESTATUS[0]}
 ES=${PIPESTATUS[0]}
 # if [ "$PES" -eq 0 ] ; then
 	# unpause databases
