@@ -18,9 +18,11 @@ $(PREFIX)/$(INSTALL_LIB):
 	mkdir -p $@
 
 $(INSTALLED_PROGS): $(PROGS)
-	install -D -o root -g sys -p $(PROGS) $(PREFIX)/$(INSTALL_BIN)
+	install -D -o root -g sys -p $? $(PREFIX)/$(INSTALL_BIN)
 
-$(INSTALLED_LIBS): $(PREFIX)/$(INSTALL_LIB) $(LIBS)
-	install -D -o root -g sys -p -t $(PREFIX)/$(INSTALL_LIB) $(LIBS)
+$(PREFIX)/$(INSTALL_LIB)/scheduled: scheduled
+	install -D -o root -g sys -p $(@F) $@
+$(PREFIX)/$(INSTALL_LIB)/snapsched-funcs: snapsched-funcs
+	install -D -o root -g sys -p $(@F) $@
 
 install: $(INSTALLED_PROGS) $(INSTALLED_LIBS)
