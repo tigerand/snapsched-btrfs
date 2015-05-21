@@ -25,12 +25,27 @@ omsg ()
 	fi
 }
 
+# utility for echo/cat to stderr
+serr()
+{
+if [ "$#" -ge 1 ] ; then
+	echo "$@" >/dev/stderr
+else
+	cat >/dev/stderr
+fi
+}
+
 # read in the config file
 _ssched_read_config()
 {
-	if [ -f $CFGFILE ] ; then
+	if [ ! -s $CFGFILE ] ; then
+		serr "Config file '$CFGFILE' is empty or non-existent."
+		return 1
+	fi
+	if [ -r $CFGFILE ] ; then
 		. $CFGFILE
 	else
+		serr "Config file '$CFGFILE' is not readable by you. (EPERM)"
 		return 1
 	fi
 }
@@ -493,7 +508,7 @@ _ssched_validate_nsrc()
 	NO_READ_CFG="$3"
 
 	if [ -z "$LSRC" ] ; then
-		echo "$UMSG" >>/dev/stderr
+		serr "$UMSG"
 		return 1
 	fi
 	if expr index "$LSRC" / >/dev/null ; then
@@ -507,7 +522,6 @@ _ssched_validate_nsrc()
 
 	if [ "$NO_READ_CFG" != y ] ; then
 		_ssched_read_config || {
-			echo "Failure reading config file.  Perhaps it doesn't exist."
 			return 1
 		}
 	fi
@@ -515,11 +529,13 @@ _ssched_validate_nsrc()
 	# check to see if we have this in our config
 
 	if [ -z "${CONFIG[SSRC_$LSRC]}" ] ; then
-		echo "Fail: cannot locate '$LSRC' in config file" >>/dev/stderr
+		serr "Fail: cannot locate '$LSRC' in config file"
 		return 1
 	fi
 	if [ `uname -n` = bleys ] ; then
-		eval $1=$LSRC
+		eval $1="${CONFIG[SSRC_$LSRC]}"
+	else
+		LSRC="${CONFIG[SSRC_$LSRC]}"
 	fi
 }
 
