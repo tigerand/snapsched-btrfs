@@ -26,16 +26,10 @@ declare -u freq
 
 freq=$FREQ
 
+# validate NSRC arg, and read in config file
 # no usage message, since this is called by cron.  supposedly.
 _ssched_validate_nsrc SSRC "" ||
 	exit 1
-
-MAX_SCNT=${CONFIG[SSRC_${NSRC}%${L}_MSC]}
-
-if [ "$MAX_SCNT" -lt 1 ] ; then
-	# max snapcount of 0 means no snapping
-	exit 0
-fi
 
 # don't spam email for hourlies
 if [ "$FREQ" != hourly ] ; then
@@ -74,6 +68,13 @@ case $FREQ in
 		exit 1
 		;;
 esac
+
+MAX_SCNT=${CONFIG[SSRC_${NSRC}%${L}_MSC]}
+
+if [ "$MAX_SCNT" -lt 1 ] ; then
+	# max snapcount of 0 means no snapping
+	exit 0
+fi
 
 SNAME="${DATESTR}_${INTSTR}"
 TBASE="${CONFIG["SNAP_MOUNT_DIR"]}/${CONFIG["SNAP_BASE_DIR"]}/$NSRC/$FREQ"
