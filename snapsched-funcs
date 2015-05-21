@@ -623,9 +623,8 @@ ssched_mod_maxsnapcount()
 
 	echo "$MSG"
 
-	_ssched_write_config
-
 	CONFIG["SSRC_${NSRC}%${INTRVAL}_MSC"]=$NMAX
+
 	if [ "$NMAX" -eq 0 ] ; then
 		unset CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]
 		unset CONFIG[SSRC_$NSRC%${INTRVAL}_TOD]
@@ -636,6 +635,8 @@ ssched_mod_maxsnapcount()
 			_ssched_submit_cronjob $NSRC $INT
 		fi
 	fi
+
+	_ssched_write_config
 }
 
 ####
