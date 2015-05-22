@@ -6,9 +6,21 @@ ETC=/etc
 export ETCDIR=$ETC/snapsched
 export CFGFILE=$ETCDIR/config
 export CRONTAB=$ETC/cron.d/snapsched
+export TMPBASE=/tmp/ssched
 export UMNT
 
 export OSILENT=
+
+if [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
+	# we're screwed
+	OLDBASH=true
+elif [ "${BASH_VERSINFO[1]}" -lt 3 ] ; then
+	# we're still screwed (PIPESTATUS)
+	OLDBASH=true
+else
+	OLDBASH=false
+fi
+export OLDBASH
 
 # utility to write optional text to stdout or what. ev.
 # uses global OSILENT variable
@@ -20,7 +32,7 @@ omsg ()
 		else
 			cat
 		fi
-	elif [ "$#" -le 1 ] ; then
+	elif [ "$#" -lt 1 ] ; then
 		cat >/dev/null
 	fi
 }
@@ -34,6 +46,33 @@ else
 	cat >/dev/stderr
 fi
 }
+
+
+# create a temp file of name $1 in $TMPBASE
+_ssched_mktemp()
+{
+	local TMPFILE=`basename $1`
+	if [ ! -d $TMPBASE ] ; then
+		mkdir -p $TMPBASE
+	fi
+	touch $TMPBASE/$TMPFILE
+}
+
+
+# remove a temp file of name $1 in $TMPBASE, and rmdir $TMPBASE if empty
+_ssched_rmtemp()
+{
+	local TMPFILE=`basename $1`
+	rm -f $TMPBASE/$TMPFILE >/dev/null 2>&1
+	if [ -d $TMPBASE ] ; then
+		# this next part is super racy.  i hope there isn't a hundred
+		# ssched jobs running on the same machine one day
+		if [ $TMPBASE/* = "$TMPBASE/*" ] ; then
+			rmdir $TMPBASE >/dev/null 2>&1
+		fi
+	fi
+}
+
 
 # read in the config file
 _ssched_read_config()
@@ -498,7 +537,7 @@ _ssched_validate_nsrc()
 	local UMSG
 	local -l NO_READ_CONFIG # convert to lowercase on assignment
 
-	if [ `uname -n` = bleys ] ; then
+	if $OLDBASH ; then
 		local LSRC
 		eval LSRC=\${$1} # poor man's nameref functionality.  very poor man.
 	else
@@ -521,9 +560,8 @@ _ssched_validate_nsrc()
 	fi
 
 	if [ "$NO_READ_CFG" != y ] ; then
-		_ssched_read_config || {
+		_ssched_read_config ||
 			return 1
-		}
 	fi
 
 	# check to see if we have this in our config
@@ -532,10 +570,10 @@ _ssched_validate_nsrc()
 		serr "Fail: cannot locate '$LSRC' in config file"
 		return 1
 	fi
-	if [ `uname -n` = bleys ] ; then
-		eval $1="${CONFIG[SSRC_$LSRC]}"
+	if $OLDBASH ; then
+		eval $1="`basename ${CONFIG[SSRC_$LSRC]}`"
 	else
-		LSRC="${CONFIG[SSRC_$LSRC]}"
+		LSRC="`basename ${CONFIG[SSRC_$LSRC]}`"
 	fi
 }
 
