@@ -67,9 +67,7 @@ _ssched_rmtemp()
 	if [ -d $TMPBASE ] ; then
 		# this next part is super racy.  i hope there isn't a hundred
 		# ssched jobs running on the same machine one day
-		if [ $TMPBASE/* = "$TMPBASE/*" ] ; then
-			rmdir $TMPBASE >/dev/null 2>&1
-		fi
+		rmdir $TMPBASE >/dev/null 2>&1
 	fi
 }
 
