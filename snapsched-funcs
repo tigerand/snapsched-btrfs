@@ -148,8 +148,8 @@ ssched_list_sources()
 	SRCS=`_ssched_list_srcs`
 
 	if [ "$1" = -v ] ; then
-		echo -e "\t       Max\tMax\tMax\tMax\tHourly\tDaily\t\tWeekly\tMonthly"
-		echo -e "Fileset\t    hourlies dailies weeklies monthlies  TOD\tDAYS/TOD\tDAY/TOD DOM/TOD Databases"
+		echo -e "\t       Max\tMax\tMax\tMax\tHourly\tDaily\t\tWeekly\t  Monthly"
+		echo -e "Fileset\t    hourlies dailies weeklies monthlies  TOD\tDAYS/TOD\tDAY/TOD   DOM/TOD            Databases"
 
 		for S in $SRCS ; do
 			if [ `expr length $S` -gt 12 ] ; then
@@ -157,7 +157,7 @@ ssched_list_sources()
 			else
 				SN="$S"
 			fi
-			printf " %-14s%2d%9d%8d%8d\t%-8s%-16s%-8s%-8s%s\n" "$SN" ${CONFIG[SSRC_$S%H_MSC]} ${CONFIG[SSRC_$S%D_MSC]} ${CONFIG[SSRC_$S%W_MSC]} ${CONFIG[SSRC_$S%M_MSC]} "${CONFIG[SSRC_$S%H_TOD]-unset}" "${CONFIG[SSRC_$S%D_DAT]-n}/${CONFIG[SSRC_$S%D_TOD]-a}" "${CONFIG[SSRC_$S%W_DAT]-n}/${CONFIG[SSRC_$S%W_TOD]-a}" "${CONFIG[SSRC_$S%M_DAT]-n}/${CONFIG[SSRC_$S%M_TOD]-a}" `echo "${CONFIG[SSRC_$S%DBS]}" | sed 's/ /,/g'`
+			printf " %-14s%2d%9d%8d%8d\t%-8s%-16s%-10s%-18s %s\n" "$SN" ${CONFIG[SSRC_$S%H_MSC]} ${CONFIG[SSRC_$S%D_MSC]} ${CONFIG[SSRC_$S%W_MSC]} ${CONFIG[SSRC_$S%M_MSC]} "${CONFIG[SSRC_$S%H_TOD]-unset}" "${CONFIG[SSRC_$S%D_DAT]-n}/${CONFIG[SSRC_$S%D_TOD]-a}" "${CONFIG[SSRC_$S%W_DAT]-n}/${CONFIG[SSRC_$S%W_TOD]-a}" "${CONFIG[SSRC_$S%M_DAT]-n}/${CONFIG[SSRC_$S%M_TOD]-a}" `echo "${CONFIG[SSRC_$S%DBS]}" | sed 's/ /,/g'`
 		done
 	else
 		echo $SRCS
