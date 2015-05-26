@@ -197,14 +197,7 @@ ssched_create_cronjobs()
 	local NSRC=$1
 	local -l NO_READ_CFG=${2:0:1}
 
-	if \! _ssched_validate_nsrc NSRC "usage: create_cronjobs <source-name>" $NO_READ_CFG; then
-		return 1
-	fi
-
-	# check to see if we have this in our config
-
-	if [ -z "${CONFIG[SSRC_$NSRC]}" ] ; then
-		echo "Fail: cannot locate '$NSRC' in config file"
+	if ! _ssched_validate_nsrc NSRC "usage: create_cronjobs <source-name>" $NO_READ_CFG; then
 		return 1
 	fi
 
@@ -565,7 +558,7 @@ _ssched_validate_nsrc()
 	# check to see if we have this in our config
 
 	if [ -z "${CONFIG[SSRC_$LSRC]}" ] ; then
-		serr "Fail: cannot locate '$LSRC' in config file"
+		serr "Fail: cannot locate source filesystem '$LSRC' in config file"
 		return 1
 	fi
 	if $OLDBASH ; then
