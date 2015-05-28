@@ -72,6 +72,27 @@ _ssched_rmtemp()
 }
 
 
+# translate interval to single uppercase letter
+# arg: {hourly,daily,weekly,monthly}
+_ssched_int2l()
+{
+	case $1 in
+		hourly)
+			echo H
+		;;
+		daily)
+			echo D
+		;;
+		weekly)
+			echo W
+		;;
+		monthly)
+			echo M
+		;;
+	esac
+}
+
+
 # read in the config file
 _ssched_read_config()
 {
@@ -196,30 +217,22 @@ ssched_create_cronjobs()
 {
 	local NSRC=$1
 	local -l NO_READ_CFG=${2:0:1}
+	local JOB
 
 	if ! _ssched_validate_nsrc NSRC "usage: create_cronjobs <source-name>" $NO_READ_CFG; then
 		return 1
 	fi
 
-	for JOB in H D W M ; do
+	for JOB in hour dai week month ; do
+
+		JOB=${JOB}ly
 
 		# if max snap count is 0, then snaps at that interval are disabled
-		if [ ${CONFIG["SSRC_${NSRC}%${JOB}_MSC"]} -eq 0 ] ; then
+		if [ ${CONFIG["SSRC_${NSRC}%`_ssched_int2l $JOB`_MSC"]} -eq 0 ] ; then
 			continue
 		fi
 
-		case $JOB in
-			H)
-				INTRVAL=hourly;;
-			D)
-				INTRVAL=daily;;
-			W)
-				INTRVAL=weekly;;
-			M)
-				INTRVAL=monthly;;
-		esac
-
-		_ssched_submit_cron $NSRC $INTRVAL
+		_ssched_submit_cron $NSRC $JOB
 	done
 }
 
@@ -505,7 +518,7 @@ ssched_set_btrfspath()
 	_ssched_mount_rootvol $1 || {
 		echo "Fail.  Couldn't mount '$1', or bad path."
 		_ssched_umount_rootvol $1
-		exit 1
+		return 1
 	}
 	_ssched_umount_rootvol $1
 
@@ -586,7 +599,7 @@ _ssched_valid_min_msc()
 ssched_mod_maxsnapcount()
 {
 	local NSRC
-	local INT
+	local INT INTRVAL
 	local NMAX
 	local USTR MSG PLURAL
 
@@ -607,7 +620,6 @@ ssched_mod_maxsnapcount()
 
 	case "$INT" in
 		hourly)
-			INTRVAL=H
 			if [ "$NMAX" -eq 0 ] ; then
 				:
 			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 36 \) ] ; then
@@ -617,7 +629,6 @@ ssched_mod_maxsnapcount()
 			fi
 			;;
 		daily)
-			INTRVAL=D
 			if [ "$NMAX" -eq 0 ] ; then
 				:
 			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 14 \) ] ; then
@@ -627,7 +638,6 @@ ssched_mod_maxsnapcount()
 			fi
 			;;
 		weekly)
-			INTRVAL=W
 			if [ "$NMAX" -eq 0 ] ; then
 				:
 			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 10 \) ] ; then
@@ -637,7 +647,6 @@ ssched_mod_maxsnapcount()
 			fi
 			;;
 		monthly)
-			INTRVAL=M
 			if [ "$NMAX" -eq 0 ] ; then
 				:
 			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 24 \) ] ; then
@@ -653,7 +662,8 @@ ssched_mod_maxsnapcount()
 			;;
 	esac
 
-	PLURAL=`echo $INT | sed 's/y$/ies/'`
+	INTRVAL=`_ssched_int2l $INT`
+	PLURAL=${INT%y}ies
 	OMAX=${CONFIG[SSRC_${NSRC}%${INTRVAL}_MSC]}
 
 	if [ $NMAX = $OMAX ] ; then
@@ -671,13 +681,22 @@ ssched_mod_maxsnapcount()
 	CONFIG["SSRC_${NSRC}%${INTRVAL}_MSC"]=$NMAX
 
 	if [ "$NMAX" -eq 0 ] ; then
-		unset CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]
-		unset CONFIG[SSRC_$NSRC%${INTRVAL}_TOD]
 		_ssched_rm_pkgcrontab $NSRC $INT
+		_ssched_remove_cronjob $NSRC $INT
 	else
-		# if creating a new scheduled snapshot, make sure it's
+		# if creating a new scheduled snapshot, make sure it's crons
+		# are intact/created
 		if [ "$OMAX" -eq 0 ] ; then
-			_ssched_submit_cronjob $NSRC $INT
+			if [ "${CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]}" ] ; then
+				# if it has special times/ set, then add
+				# back the entry in the package crontab
+				ssched_set_$PLURAL $NSRC \
+					"${CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]}" \
+					"${CONFIG[SSRC_$NSRC%${INTRVAL}_TOD]}" \
+					yes
+			else
+				_ssched_submit_cronjob $NSRC $INT
+			fi
 		fi
 	fi
 
@@ -783,14 +802,14 @@ ssched_set_dailies()
 			;;
 	esac
 
+	CONFIG[SSRC_$NSRC%D_DAT]="$DAYS"
+	CONFIG[SSRC_$NSRC%D_TOD]="$TOD"
+	_ssched_write_config
+
 	_ssched_mod_pkgcrontab "$NSRC" daily "$DAYS" "$CTIMES"
 
 	# make sure the old $ETC/cron.daily is history
 	_ssched_remove_cron $NSRC daily
-
-	CONFIG[SSRC_$NSRC%D_DAT]="$DAYS"
-	CONFIG[SSRC_$NSRC%D_TOD]="$TOD"
-	_ssched_write_config
 }
 
 
@@ -874,14 +893,14 @@ ssched_set_weeklies()
 			;;
 	esac
 
+	CONFIG[SSRC_$NSRC%W_DAT]="$DAY"
+	CONFIG[SSRC_$NSRC%W_TOD]="$TOD"
+	_ssched_write_config
+
 	_ssched_mod_pkgcrontab "$NSRC" weekly "$DAY" "$CTIMES" ""
 
 	# make sure the old $ETC/cron.weekly is history
 	_ssched_remove_cron $NSRC weekly
-
-	CONFIG[SSRC_$NSRC%W_DAT]="$DAY"
-	CONFIG[SSRC_$NSRC%W_TOD]="$TOD"
-	_ssched_write_config
 }
 
 
@@ -982,14 +1001,14 @@ ssched_set_monthlies()
 			;;
 	esac
 
+	CONFIG[SSRC_$NSRC%M_DAT]="$DOM"
+	CONFIG[SSRC_$NSRC%M_TOD]="$TOD"
+	_ssched_write_config
+
 	_ssched_mod_pkgcrontab "$NSRC" monthly "$DOM" "$CTIMES" "$CPROG"
 
 	# make sure the old $ETC/cron.monthly is history
 	_ssched_remove_cron $NSRC monthly
-
-	CONFIG[SSRC_$NSRC%M_DAT]="$DOM"
-	CONFIG[SSRC_$NSRC%M_TOD]="$TOD"
-	_ssched_write_config
 }
 
 
@@ -1047,7 +1066,7 @@ ssched_add_source()
 	# this will overwrite any previous config for this source
 	CONFIG["SSRC_$NSRC"]=$SRCDIR
 
-	local ILEN=`expr length SSRC_$NSRC%`
+	local ILEN=`expr length SSRC_${NSRC}%`
 	for K in "${!CONFIG[@]}" ; do
 		if [ `expr match SSRC_$NSRC% $K` -gt "$ILEN" ] ; then
 			unset CONFIG[$K]
@@ -1059,9 +1078,9 @@ ssched_add_source()
 	if [ "$1" -lt 0 ] ; then
 		echo "Overriding max snap count for hourlies to 0 (disabled)"
 		H=0
-	elif [ "$1" -gt 25 ] ; then
-		echo "Overriding max snap count for hourlies to 25"
-		H=25
+	elif [ "$1" -gt 36 ] ; then
+		echo "Overriding max snap count for hourlies to 36"
+		H=36
 	else
 		H=$1
 	fi
@@ -1072,9 +1091,9 @@ ssched_add_source()
 	if [ "$1" -lt 0 ] ; then
 		echo "Overriding max snap count for dailies to 0 (disabled)"
 		D=0
-	elif [ "$1" -gt 8 ] ; then
-		echo "Overriding max snap count for dailies to 8"
-		D=8
+	elif [ "$1" -gt 14 ] ; then
+		echo "Overriding max snap count for dailies to 14"
+		D=14
 	else
 		D=$1
 	fi
@@ -1085,9 +1104,9 @@ ssched_add_source()
 	if [ "$1" -lt 0 ] ; then
 		echo "Overriding max snap count for weeklies to 0 (disabled)"
 		W=0
-	elif [ "$1" -gt 6 ] ; then
-		echo "Overriding max snap count for weeklies to 6"
-		W=8
+	elif [ "$1" -gt 10 ] ; then
+		echo "Overriding max snap count for weeklies to 10"
+		W=10
 	else
 		W=$1
 	fi
@@ -1098,9 +1117,9 @@ ssched_add_source()
 	if [ "$1" -lt 0 ] ; then
 		echo "Overriding max snap count for monthlies to 0 (disabled)"
 		M=0
-	elif [ "$1" -gt 13 ] ; then
-		echo "Overriding max snap count for monthlies to 13"
-		M=13
+	elif [ "$1" -gt 24 ] ; then
+		echo "Overriding max snap count for monthlies to 24"
+		M=24
 	else
 		M=$1
 	fi
@@ -1121,6 +1140,7 @@ ssched_remove_source()
 {
 	local JOB INTRVAL SRCDIR NSRC
 	local -l ANS
+	local I R
 
 	# arguments: filesystem name
 
@@ -1197,6 +1217,17 @@ ssched_remove_source()
 	unset CONFIG["SSRC_${NSRC}%W_MSC"]
 	unset CONFIG["SSRC_${NSRC}%M_MSC"]
 	unset CONFIG["SSRC_${NSRC}%DBS"]
+	for I in hour dai week month ; do
+		I=${I}ly
+		R=`_ssched_int2l $I`
+		if [ "${CONFIG[SSRC_$NSRC%${R}_DAT]}" ] ; then
+			unset CONFIG[SSRC_$NSRC%${R}_DAT]
+			unset CONFIG[SSRC_$NSRC%${R}_TOD]
+			# if the MSC was zero for this interval, then there won't
+			# be an entry to delete, but whatever
+			_ssched_rm_pkgcrontab $NSRC $I
+		fi
+	done
 
 	_ssched_write_config
 
