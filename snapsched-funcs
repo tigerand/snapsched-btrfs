@@ -539,7 +539,7 @@ ssched_set_btrfspath()
 _ssched_validate_nsrc()
 {
 	local UMSG
-	local -l NO_READ_CONFIG # convert to lowercase on assignment
+	local -l NO_READ_CFG # convert to lowercase on assignment
 
 	if $OLDBASH ; then
 		local LSRC
@@ -682,7 +682,7 @@ ssched_mod_maxsnapcount()
 
 	if [ "$NMAX" -eq 0 ] ; then
 		_ssched_rm_pkgcrontab $NSRC $INT
-		_ssched_remove_cronjob $NSRC $INT
+		_ssched_remove_cron $NSRC $INT
 	else
 		# if creating a new scheduled snapshot, make sure it's crons
 		# are intact/created
@@ -694,8 +694,10 @@ ssched_mod_maxsnapcount()
 					"${CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]}" \
 					"${CONFIG[SSRC_$NSRC%${INTRVAL}_TOD]}" \
 					yes
+				# no need to write the config file twice
+				return
 			else
-				_ssched_submit_cronjob $NSRC $INT
+				_ssched_submit_cron $NSRC $INT
 			fi
 		fi
 	fi
@@ -942,7 +944,7 @@ ssched_set_monthlies()
 	fi
 
 	# validate NSRC, and read config file if necessary
-	_ssched_validate_nsrc NSRC "$UMSG" "$NO_READ_CONFIG" ||
+	_ssched_validate_nsrc NSRC "$UMSG" "$NO_READ_CFG" ||
 		return 1
 
 	# validate against max snap count
@@ -1188,7 +1190,7 @@ ssched_remove_source()
 		fi
 	fi
 
-	ES=
+	ES=0
 	echo "Do you wish to delete the source subvolume itself?"
 	echo "This has no effect on scheduled snapshots of the subvolume, which"
 	echo "you have${ANS:= not} already deleted."

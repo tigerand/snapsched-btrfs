@@ -1,10 +1,15 @@
 #!/bin/bash
 
-. ~/lib/snapsched/snapsched-funcs
+. ./snapsched-funcs
 
-ETCDIR=~/lib/snapsched
-CFGFILE=$ETCDIR/test-config
-CRONTAB=$ETCDIR/test-snapsched
+ETC=testdir/etc
+ETCDIR=$ETC/snapsched
+CFGFILE=$ETC/test-config
+CRONTAB=$ETC/test-snapsched
+
+
+mkdir -p $ETCDIR
+mkdir -p $ETC/cron.{dai,hour,month,week}ly
 
 TESTFUNCs="$1"
 shift
@@ -22,6 +27,7 @@ for F in $TESTFUNCs ; do
 			if [ ${F#_} != "$F" ] ; then
 				$F "$@" || echo failure!
 			else
+#set -x
 				eval ssched_$F "$@" || echo failure!
 			fi
 			;;

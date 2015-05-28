@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# depends: sed cron bash
+# depends: sed cron bash bsdmainutils
 # depends: if ({mysql,postgresql} database specified) {mysql,postgresql}-client
 
 export PRE=/usr/local
