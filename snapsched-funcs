@@ -120,9 +120,9 @@ _ssched_mount_rootvol()
 	fi
 
 	if grep -q "$BPATH" /proc/mounts ; then
-		UMNT=
+		UMNT=false
 	else
-		UMNT=yes
+		UMNT=true
 		mount "$BPATH"
 	fi
 }
@@ -130,10 +130,10 @@ _ssched_mount_rootvol()
 # umount the btrfs subvolid=0 filesystem
 _ssched_umount_rootvol()
 {
-	local BPATH=$1
+	local BPATH="$1"
 
-	if [ "$UMNT" ] ; then
-		umount $BPATH
+	if $UMNT ; then
+		umount "$BPATH"
 	fi
 }
 
@@ -1120,6 +1120,7 @@ ssched_add_source()
 ssched_remove_source()
 {
 	local JOB INTRVAL SRCDIR NSRC
+	local -l ANS
 
 	# arguments: filesystem name
 
@@ -1130,12 +1131,8 @@ ssched_remove_source()
 
 	NSRC=$1
 
-	if [ -z "$NSRC" ] ; then
-		echo "Not enough arguments."
-		exit 1
-	fi
-
-	_ssched_read_config
+	_ssched_validate_nsrc NSRC "$0: <filesystem-source>" ||
+		return 1
 
 	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
@@ -1147,8 +1144,51 @@ ssched_remove_source()
 		exit 1
 	fi
 
+	# FIXME what about deleting the scheduled snapshots?!?
+	# use btrfs show command to list snapshots OR
+	# use btrfs list -u [idiotic output] | grep "path $SRCDIR"
+	# then use btrfs sub del -c `btrfs list -q | grep "parent_uuid $UUID"`
+	# not really, but i get the idea
+	# MUST BE VERY CAREFUL, because a child snapshot might be a newly added
+	# source or other important snapshot.  so look only for
+	# snapshots under .ssched/$NSRC/
+	ANS=
+	SSNAPS_BDIR="${CONFIG[SNAP_MOUNT_DIR]}/${CONFIG[SNAP_BASE_DIR]}/$NSRC"
+	CHILD_SNAPS=$SSNAPS_BDIR/*/*
+	if [ "$CHILD_SNAPS" != "$SSNAPS_BDIR/*/*" ] ; then
+		echo "Delete all the scheduled snapshot of this former source?"
+		echo $CHILD_SNAPS |
+			sed "s|^$SSNAPS_BDIR/||" | sed "s|$SSNAPS_BDIR/|\n|g"
+		read -p "Answer must be 'yes' to delete.  Really delete all? " ANS
+		if [ "$ANS" = yes ] ; then
+			btrfs sub del -c $CHILD_SNAPS
+		else
+			ANS=
+			echo "As you wish.  The source '$NSRC' will be removed from the config file"
+		fi
+	fi
+
+	ES=
+	echo "Do you wish to delete the source subvolume itself?"
+	echo "This has no effect on scheduled snapshots of the subvolume, which"
+	echo "you have${ANS:= not} already deleted."
+	ANS=
+	read -p "[no]/yes ? " ANS
+	if [ "$ANS" = yes ] ; then
+		echo "Are you super-sure?  This is very dangerous, and you MUST"
+		echo "know exactly what you are doing!"
+		read -p "Are you double-sure you want to delete subvolume '$NSRC' No/yes ? " ANS
+		if [ "$ANS" = yes ] ; then
+			btrfs sub del -c "$SRCDIR"
+			ES=$?
+		fi
+	fi
+
 	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
+	if [ "$ES" -ne 0 ] ; then
+		serr "Error deleting snapshot dir '$SRCDIR': $ES"
+	fi
 
 	# delete them
 	unset CONFIG["SSRC_$NSRC"]
@@ -1162,5 +1202,6 @@ ssched_remove_source()
 
 	ssched_delete_cronjobs $NSRC
 
-	# FIXME what about deleting the scheduled snapshots?!?
+	echo "Scheduled snapshot source '$NSRC' removed from config file and"
+	echo "cron jobs."
 }

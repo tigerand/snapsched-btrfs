@@ -132,11 +132,12 @@ if [ `echo ${TBASE}/* | wc -w` -ge "$MAX_SCNT" ] ; then
 	ES=${PIPESTATUS[0]}
 	if [ "$ES" -ne 0 ] ; then
 		serr -e "\tFAILure deleting the oldest snapshot '$TBASE/$OLDSNAP': $ES"
-		serr <$MTMP
+		serr < $MTMP
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 		_ssched_rmtemp $MTMP
 		exit $ES
 	fi
+	omsg < $MTMP
 	# output a blank line for formatting
 	omsg ""
 fi
