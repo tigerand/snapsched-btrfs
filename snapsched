@@ -70,6 +70,16 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
 	echo "                  Called with one argument <filesystem-name> deletes"
 	echo "                      just the cron jobs for that filesystem."
 
+	echo "lssnap          : list snapsched snapshots"
+	echo "                  Called with no arguments, lists all snapshots for"
+	echo "                    all configured sources."
+	echo "                  Called with one argument <filesystem-name>, lists"
+	echo "                    all snapshots for that source."
+	echo "                  Called with two arguments <filesystem-name> <interval-list>"
+	echo "                    lists all snapshots for that source/interval pairing."
+	echo "                    interval-list may be a comma separated list"
+	echo "                    from hourly, daily, weekly, monthly"
+
 	echo "set_btrfspath :  Set the main mount point for the btrfs filesystem"
 	echo "                 Arg: <btfs-mount-point>"
 	echo "                 Changes the mount point in the config file for the

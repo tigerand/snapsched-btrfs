@@ -129,6 +129,17 @@ _ssched_write_config()
 _ssched_list_srcs()
 {
 	echo ${!CONFIG[*]} | grep -o 'SSRC_[^ ]*' | grep -v \% | sed 's/^SSRC_//'
+
+# alternate method.  which is better?
+#	for I in "${!CONFIG[@]}" ; do
+#		if [ "$I" = "${I#SSRC_}" ; then
+#			continue
+#		fi
+#		if ! expr index "$I" '%' >/dev/null; then
+#			SRCS_LIST+=" ${I#SSRC_}"
+#		fi
+#	done
+#	echo $SRCS_LIST
 }
 
 # mount the btrfs subvolid=0 filesystem
@@ -184,6 +195,76 @@ ssched_list_sources()
 		echo $SRCS
 	fi
 }
+
+
+# list snapsched snapshots for optional [source [interval[,interval...]]]
+#command
+ssched_lssnap()
+{
+	local NSRC
+	local I S SRCS_LIST INT_LIST SDIR
+	local -u IRVAL
+
+	if [ "$#" -ge 1 ] ; then
+		NSRC="$1"
+		_ssched_validate_nsrc NSRC "No source '$NSRC' found." || return 1
+		SRCS_LIST="$NSRC"
+		shift
+	else
+		_ssched_read_config
+		SRCS_LIST="`_ssched_list_srcs`"
+	fi
+
+	if [ "$#" -ge 1 ] ; then
+		INT_LIST="${1//,/ }"
+		for I in $INT_LIST ; do
+			case $I in
+				hourly|daily|weekly|monthly)
+					:
+					;;
+				hourlies|dailies|weeklies|monthlies)
+					INT_LIST=`echo $INT_LIST | sed "s/$I/${I%ies}y/"`
+					;;
+				*)
+					serr "$0: invalid interval argument: '$I'"
+					return 1
+					;;
+			esac
+		done
+	else
+		INT_LIST="hourly daily weekly monthly"
+	fi
+
+	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+
+	for S in $SRCS_LIST ; do
+		echo "${S}:"
+		SDIR="${CONFIG[SNAP_MOUNT_DIR]}/${CONFIG[SNAP_BASE_DIR]}/$S"
+		for I in $INT_LIST ; do
+			IRVAL=$I
+			# FIXME we need to extract things like the gen, ogen, otime
+			# local ID GEN OGEN barf OD OT P
+			# btrfs sub list -s ${CONFIG[SSRC_$S]} | while read ID GEN OGEN barf OD OT P ; do
+			# if [ \( "$ID" = ID \) -o \( "$ID" = '--' \) ] ; then
+			#	continue
+			# fi
+			# if ! echo $P | grep "${CONFIG[SNAP_BASE_DIR]}/$S/${CONFIG[SNAP_${IRVAL}_DIR]}" >/dev/null ; then
+			#	continue
+			# fi
+			# printf "%7s %7s %7s %s %s %s\n" $ID $GEN $OGEN $OD $OT `basename $P`
+			# done
+			if [ -d $SDIR/${CONFIG[SNAP_${IRVAL}_DIR]} ] ; then
+				echo "    ${I%y}ies:"
+				ls $SDIR/${CONFIG[SNAP_${IRVAL}_DIR]} |
+					sed -e 's|^.*/\([^/]*$\)|\1|' -e 's/^/\t/'
+				# for some reason, 's|^.*/\([^/]*$\)|\t\1|' does not work
+			fi
+		done
+	done
+
+	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+}
+
 
 
 # delete specific cron entry in $ETC/cron.{hour,dai,week,month}ly/ directories
@@ -557,6 +638,10 @@ _ssched_validate_nsrc()
 	if expr index "$LSRC" / >/dev/null ; then
 		LSRC=`basename $LSRC`
 		# strips off trailing slashes too
+	fi
+	if expr index "$LSRC" '%' >/dev/null ; then
+		serr "Cannot use '%' character in source name"
+		return 1
 	fi
 
 	if [ "${#NO_READ_CFG}" -gt 1 ] ; then
