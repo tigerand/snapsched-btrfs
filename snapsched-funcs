@@ -968,11 +968,11 @@ ssched_set_monthlies()
 
 	case "$DOM" in
 		last-weekday)
-			CPROG='[ "`$date +\%e`" = $(ncal -h | egrep '\''Mo|Tu|We|Th|Fr'\'' | sed '\''s/^.* \([0-9]\+\) *$/\1/'\'' | sort | tail -1) ] && '
+			CPROG='[ "`date +\%e`" = $(ncal -h | egrep '\''Mo|Tu|We|Th|Fr'\'' | sed '\''s/^.* \([0-9]\+\) *$/\1/'\'' | sort | tail -1) ] && '
 			CTIMES="$TMIN $THOUR 26-31 * mon-fri"
 			;;
 		last-weekend)
-			CPROG='[ "`$date +\%e`" = $(ncal -h | egrep '\''Su|Sa'\'' | sed '\''s/^.* \([0-9]\+\) *$/\1/'\'' | sort | tail -1) ] && '
+			CPROG='[ "`date +\%e`" = $(ncal -h | egrep '\''Su|Sa'\'' | sed '\''s/^.* \([0-9]\+\) *$/\1/'\'' | sort | tail -1) ] && '
 			CTIMES="$TMIN $THOUR 23-31 * sat,sun"
 			;;
 		last-*)
@@ -985,11 +985,11 @@ ssched_set_monthlies()
 				return 1
 			}
 			SDAY=`echo $LDAY | sed 's/.$//'`
-			CPROG='[ "`$date +\%e`" = $(ncal -h | grep -i '$SDAY' | sed '\''s/^.* \([0-9]\+\) *$/\1/'\'') ] && '
+			CPROG='[ "`date +\%e`" = $(ncal -h | grep -i '$SDAY' | sed '\''s/^.* \([0-9]\+\) *$/\1/'\'') ] && '
 			CTIMES="$TMIN $THOUR 22-31 * $LDAY"
 			;;
 		last)
-			CPROG='[ "`$date +\%e`" = $(cal -h | sed '\''/^ *$/d'\'' | tail -1 | sed '\''s/^.* \([23][018]\) *$/\1/'\'') ] && '
+			CPROG='[ "`date +\%e`" = $(cal -h | sed '\''/^ *$/d'\'' | tail -1 | sed '\''s/^.* \([23][018]\) *$/\1/'\'') ] && '
 			CTIMES="$TMIN $THOUR 28-31 * *"
 			;;
 		[1-9]|1[0-9]|2[0-9]|3[01])
