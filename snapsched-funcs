@@ -202,8 +202,9 @@ ssched_list_sources()
 ssched_lssnap()
 {
 	local NSRC
-	local I S SRCS_LIST INT_LIST SDIR
-	local -u IRVAL
+	local I S SRCS_LIST SDIR
+	local -a INT_LIST
+	local -u IUP
 
 	if [ "$#" -ge 1 ] ; then
 		NSRC="$1"
@@ -216,23 +217,23 @@ ssched_lssnap()
 	fi
 
 	if [ "$#" -ge 1 ] ; then
-		INT_LIST="${1//,/ }"
-		for I in $INT_LIST ; do
+		INT_LIST=(${1//,/ })
+		INT_LIST=${INT_LIST[*]/ies/y}
+		for I in ${INT_LIST[*]} ; do
 			case $I in
 				hourly|daily|weekly|monthly)
 					:
 					;;
-				hourlies|dailies|weeklies|monthlies)
-					INT_LIST=`echo $INT_LIST | sed "s/$I/${I%ies}y/"`
-					;;
 				*)
 					serr "$0: invalid interval argument: '$I'"
+					serr " interval argument is a [comma separated] list of one"
+					serr " or more of {hourly, daily, weekly, montly}"
 					return 1
 					;;
 			esac
 		done
 	else
-		INT_LIST="hourly daily weekly monthly"
+		INT_LIST=(hourly daily weekly monthly)
 	fi
 
 	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
@@ -240,8 +241,7 @@ ssched_lssnap()
 	for S in $SRCS_LIST ; do
 		echo "${S}:"
 		SDIR="${CONFIG[SNAP_MOUNT_DIR]}/${CONFIG[SNAP_BASE_DIR]}/$S"
-		for I in $INT_LIST ; do
-			IRVAL=$I
+		for I in ${INT_LIST[*]} ; do
 			# FIXME we need to extract things like the gen, ogen, otime
 			# local ID GEN OGEN barf OD OT P
 			# btrfs sub list -s ${CONFIG[SSRC_$S]} | while read ID GEN OGEN barf OD OT P ; do
@@ -253,11 +253,14 @@ ssched_lssnap()
 			# fi
 			# printf "%7s %7s %7s %s %s %s\n" $ID $GEN $OGEN $OD $OT `basename $P`
 			# done
-			if [ -d $SDIR/${CONFIG[SNAP_${IRVAL}_DIR]} ] ; then
+			# another option is to use btrfs sub show, which lists snapshots
+			# in their heirarchical order, which turns out to be cool
+			# we could add a -h option to do that, and leave the interval
+			# directory on the snapshot name so the user can see what type it is
+			IUP=$I
+			if [ -d $SDIR/${CONFIG[SNAP_${IUP}_DIR]} ] ; then
 				echo "    ${I%y}ies:"
-				ls $SDIR/${CONFIG[SNAP_${IRVAL}_DIR]} |
-					sed -e 's|^.*/\([^/]*$\)|\1|' -e 's/^/\t/'
-				# for some reason, 's|^.*/\([^/]*$\)|\t\1|' does not work
+				ls $SDIR/${CONFIG[SNAP_${IUP}_DIR]} | sed 's/^/\t/'
 			fi
 		done
 	done
