@@ -166,6 +166,8 @@ ES=${PIPESTATUS[0]}
 if [ "$ES" -ne 0 ] ; then
 	serr "Some sort of failure creating snapshot '$FREQ/${DATESTR}_${INTSTR}'"
 	serr <$MTMP
+else
+	omsg <$MTMP
 fi
 
 _ssched_rmtemp $MTMP

@@ -244,7 +244,8 @@ ssched_lssnap()
 			IRVAL=$I
 			# FIXME we need to extract things like the gen, ogen, otime
 			# local ID GEN OGEN barf OD OT P
-			# btrfs sub list -s ${CONFIG[SSRC_$S]} | while read ID GEN OGEN barf OD OT P ; do
+			# printf "%7s %7s %7s %10s %8s %s\n" ID GEN OGEN OD OT name
+			# btrfs sub list -st ${CONFIG[SSRC_$S]} | while read ID GEN OGEN barf OD OT P ; do
 			# if [ \( "$ID" = ID \) -o \( "$ID" = '--' \) ] ; then
 			#	continue
 			# fi
