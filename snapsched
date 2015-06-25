@@ -130,6 +130,18 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
 	echo "                 ToD is the HH:MM format of the hour and minute to
                    fire the snapshot on the day in question.  default: 22:00"
 
+	echo "diff          :  diff a file against version in a scheduled snapshot"
+	echo "                 args: <snap-src> <int-type> <file-name> [<back-num>]"
+	echo "                 <snap-src> - the name of the source fileset"
+	echo "                 <int-type> - h[ourly],d[ayly],w[eekly],m[onthly]"
+	echo "                 <file-name> - name of file.  relative from PWD for now"
+	echo "                 env variable SSCHED_DIFF can contain custom diff"
+	echo "                 <back-num> - number of snaps to go back. default=1"
+	echo "                              max is dependent on config and int-type"
+
+	echo "get           :  same as diff, but instead copy the file from the"
+	echo "                 snapshot onto the existing file. DANGEROUS!"
+
 	exit 0
 fi
 

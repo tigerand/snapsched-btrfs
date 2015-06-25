@@ -93,6 +93,33 @@ _ssched_int2l()
 }
 
 
+# translate interval to snapsched sub dir for that interval
+# arg: {hourly,daily,weekly,monthly}
+_ssched_int2dir()
+{
+	local -u I
+
+	case $1 in
+		hourly|daily|weekly|monthly)
+			I=$1
+		;;
+		h|H|hour|hourlies)
+			I=hourly
+		;;
+		d|D|day|dailies)
+			I=daily
+		;;
+		w|W|week|weeklies)
+			I=weekly
+		;;
+		m|M|month|monthlies)
+			I=monthly
+		;;
+	esac
+	echo ${CONFIG[SNAP_${I}_DIR]}
+}
+
+
 # read in the config file
 _ssched_read_config()
 {
@@ -147,15 +174,15 @@ _ssched_mount_rootvol()
 {
 	local BPATH="$1"
 
-	if [ ! "$BPATH" ] ; then
+	UMNT=false
+
+	if [ \( ! "$BPATH" \) -o \( ! -d "$BPATH" \) ] ; then
 		return 1
 	fi
 
-	if grep -q "$BPATH" /proc/mounts ; then
-		UMNT=false
-	else
+	if ! grep -q "$BPATH" /proc/mounts ; then
+		mount "$BPATH" || return $?
 		UMNT=true
-		mount "$BPATH"
 	fi
 }
 
@@ -236,7 +263,7 @@ ssched_lssnap()
 		INT_LIST=(hourly daily weekly monthly)
 	fi
 
-	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
 
 	for S in $SRCS_LIST ; do
 		echo "${S}:"
@@ -600,14 +627,11 @@ ssched_set_btrfspath()
 {
 	_ssched_read_config
 
-	_ssched_mount_rootvol $1 || {
-		echo "Fail.  Couldn't mount '$1', or bad path."
-		_ssched_umount_rootvol $1
-		return 1
-	}
-	_ssched_umount_rootvol $1
+	_ssched_mount_rootvol "$1" || return $?
 
-	CONFIG[SNAP_MOUNT_DIR]=$1
+	_ssched_umount_rootvol "$1"
+
+	CONFIG[SNAP_MOUNT_DIR]="$1"
 
 	_ssched_write_config
 }
@@ -828,11 +852,11 @@ ssched_set_dailies()
 {
 	local NSRC DAYS TOD CTIMES
 	local -l NO_READ_CFG # converts to lowercase on assignment
-	local USMG="usage: set_dailies <source-name> <days> [<tod>]"
+	local UMSG="usage: set_dailies <source-name> <days> [<tod>]"
 	local THOUR=0 TMIN=1
 
 	if [ "$#" -lt 2 ] ; then
-		echo "$USMG"
+		echo "$UMSG"
 		return 1
 	fi
 
@@ -855,7 +879,7 @@ ssched_set_dailies()
 	fi
 
 	# validate NSRC, and read config file if necessary
-	_ssched_validate_nsrc NSRC "$USMG" "$NO_READ_CFG" ||
+	_ssched_validate_nsrc NSRC "$UMSG" "$NO_READ_CFG" ||
 		return 1
 
 	# validate against max snap count
@@ -946,7 +970,7 @@ ssched_set_weeklies()
 	fi
 
 	# validate NSRC, and read config file if necessary
-	_ssched_validate_nsrc NSRC "$USMG" "$NO_READ_CFG" ||
+	_ssched_validate_nsrc NSRC "$UMSG" "$NO_READ_CFG" ||
 		return 1
 
 	# validate against max snap count
@@ -1107,7 +1131,7 @@ ssched_set_monthlies()
 #command
 ssched_add_source()
 {
-	local JOB INTRVAL SRCDIR NSRC H D W M
+	local SRCDIR NSRC H D W M
 	local -l ANS
 
 	# arguments:
@@ -1142,7 +1166,7 @@ ssched_add_source()
 		fi
 	fi
 
-	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
 
 	SRCDIR=${CONFIG[SNAP_MOUNT_DIR]}/$NSRC
 
@@ -1158,9 +1182,9 @@ ssched_add_source()
 	CONFIG["SSRC_$NSRC"]=$SRCDIR
 
 	local ILEN=`expr length SSRC_${NSRC}%`
-	for K in "${!CONFIG[@]}" ; do
-		if [ `expr match SSRC_$NSRC% $K` -gt "$ILEN" ] ; then
-			unset CONFIG[$K]
+	for H in "${!CONFIG[@]}" ; do
+		if [ `expr match SSRC_$NSRC% $H` -gt "$ILEN" ] ; then
+			unset CONFIG[$H]
 		fi
 	done
 
@@ -1229,7 +1253,7 @@ ssched_add_source()
 #command
 ssched_remove_source()
 {
-	local JOB INTRVAL SRCDIR NSRC
+	local SRCDIR NSRC SSNAPS_BDIR CHILD_SNAPS ES
 	local -l ANS
 	local I R
 
@@ -1245,7 +1269,7 @@ ssched_remove_source()
 	_ssched_validate_nsrc NSRC "$0: <filesystem-source>" ||
 		return 1
 
-	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
 
 	SRCDIR=${CONFIG[SNAP_MOUNT_DIR]}/$NSRC
 
@@ -1326,4 +1350,94 @@ ssched_remove_source()
 
 	echo "Scheduled snapshot source '$NSRC' removed from config file and"
 	echo "cron jobs."
+}
+
+
+
+#command
+ssched_diff()
+{
+	local NSRC FNAM ES BN=1
+	local -l INTTYPE
+	local USTR="usage: diff <source-name> <int-type> <file-name> [<back-num>]"
+
+	if [ "$#" -lt 3 ] ; then
+		serr "wrong number of arguments: $#"
+		echo "$USTR"
+		return 1
+	fi
+
+	NSRC="$1"
+	INTTYPE="$2"
+	FNAM="$3"
+	shift;shift;shift
+	if [ "$#" -eq 1 ] ; then
+		BN="$1"
+		if [ "$BN" -lt 1 ] ; then
+			serr "$USTR"
+			serr "Back-num invalid value '$BN'"
+			return 1
+		fi
+	fi
+
+	if [ -d "$FNAM" ] ; then
+		serr "$USTR"
+		serr "Can't diff directories (yet). '$FNAM'"
+		return 1
+	elif [ ! -r "$FNAM" ] ; then
+		serr "$USTR"
+		serr "Can't open file for reading: '$FNAM'"
+		return 1
+	fi
+
+	# validate NSRC, and read config file if necessary
+	_ssched_validate_nsrc NSRC "$USTR" ||
+		return 1
+
+	# validate int type
+	case "$INTTYPE" in
+		h|hour*)
+			INTR=hourly
+			;;
+		d|day*) # doesn't get dailies
+			INTR=daily
+			;;
+		w|week*)
+			INTR=weekly
+			;;
+		m|month*)
+			INTR=monthly
+			;;
+		*)
+			serr -e "$USTR"
+			serr "Bad interval value: '$INTTYPE'"
+			return 1
+			;;
+	esac
+
+	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
+
+	SDIR="${CONFIG[SNAP_MOUNT_DIR]}/${CONFIG[SNAP_BASE_DIR]}/$NSRC/`_ssched_int2dir $INTR`"
+	if [ "$BN" -gt "`\ls $SDIR | wc -l`" ] ; then
+		serr "Specified back-num '$BN' is greater than available '`\ls $SDIR | wc -l`'"
+		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		return 1
+	fi
+	SDIR="$SDIR/`\ls $SDIR | tail -$BN | head -1`"
+
+	if expr match "$FNAM" / >/dev/null ; then
+		FPATH="$FNAM"
+	else
+		FPATH="`pwd`/$FNAM"
+	fi
+	FPATH=${FPATH#/}
+
+	# whatever errors diff gets about no files, etc,
+	#  just poop 'em on to the user
+	${SSCHED_DIFF:-diff} "$SDIR/$FPATH" "$FNAM"
+	ES=$?
+
+	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+
+	return $ES
 }
