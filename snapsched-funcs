@@ -1399,7 +1399,7 @@ ssched_diff()
 		h|hour*)
 			INTR=hourly
 			;;
-		d|day*) # doesn't get dailies
+		d|day*|daily|dailies)
 			INTR=daily
 			;;
 		w|week*)
