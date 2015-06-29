@@ -1,0 +1,1 @@
+* scheduled snapshots at the same time often step on each other, causing one or both to fail, or to produce the wrong error messages if they would have failed anyway. (monthly default TOD is 22:05 for all sources)

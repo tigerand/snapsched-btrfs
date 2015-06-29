@@ -40,11 +40,11 @@ omsg ()
 # utility for echo/cat to stderr
 serr()
 {
-if [ "$#" -ge 1 ] ; then
-	echo "$@" >/dev/stderr
-else
-	cat >/dev/stderr
-fi
+	if [ "$#" -ge 1 ] ; then
+		echo "$@" >/dev/stderr
+	else
+		cat >/dev/stderr
+	fi
 }
 
 

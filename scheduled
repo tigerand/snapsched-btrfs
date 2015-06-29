@@ -4,7 +4,7 @@
 export PRE=/usr/local
 
 MAILTO=root
-# exec 2>&1
+exec 2>&1
 
 # create the scheduled snapshots.  called by cron.
 
@@ -84,8 +84,13 @@ TBASE="${CONFIG["SNAP_MOUNT_DIR"]}/${CONFIG["SNAP_BASE_DIR"]}/$NSRC/$FREQ"
 TDIR="${TBASE}/$SNAME"
 
 _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
+	ES=$?
 	serr "Unable to mount root volume '${CONFIG[SNAP_MOUNT_DIR]}'"
-	serr "Perhaps it needs to be added in /etc/fstab?  Snapsched requires that."
+	if [ ! -d "${CONFIG[SNAP_MOUNT_DIR]}" ] ; then
+		serr "Directory  '${CONFIG[SNAP_MOUNT_DIR]}' does not exist."
+	elif [ "$ES" -eq 4 ] ; then
+		serr "Perhaps it needs to be configured in /etc/fstab?  Snapsched requires that."
+	fi
 	exit 1
 }
 
