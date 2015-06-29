@@ -3,30 +3,6 @@
 
 # list_sources lssnap print_config set_btrfspath mod_maxsnapcount set_dailies set_weeklies set_monthlies add_source remove_source diff
 
-# kept in the library
-
-# some array utilities
-
-__is_in_array()
-{
-	#    if
-	# maybe someday i'll update bash on bleys to something decent
-	# local -n ARR=$2
-	#    else
-	local ARR
-	eval ARR=(\"\${${2}[@]}\") # poor man's nameref functionality.
-	#    fi
-	local P
-
-	P="$1"
-	for I in "${ARR[@]}" ; do
-		if [ "$P" = "$I" ] ; then
-			return 0
-		fi
-	done
-	return 1
-}
-
 
 _ssched_comp()
 {
