@@ -20,7 +20,7 @@ $(PREFIX)/$(INSTALL_LIB):
 	mkdir -p $@
 
 $(INSTALLED_PROGS): $(PROGS)
-	install -D -o root -g sys -p $? $(PREFIX)/$(INSTALL_BIN)
+	install -o root -g sys -p $? $(PREFIX)/$(INSTALL_BIN)
 
 $(INSTALLED_COMP): $(COMP)
 	install -o root -g sys -p $? /etc/bash_completion.d
