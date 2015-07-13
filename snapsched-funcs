@@ -1384,7 +1384,7 @@ ssched_diff()
 		serr "$USTR"
 		serr "Can't diff directories (yet). '$FNAM'"
 		return 1
-	elif [ ! -r "$FNAM" ] ; then
+	elif [ -e "$FNAM" -a ! -r "$FNAM" ] ; then
 		serr "$USTR"
 		serr "Can't open file for reading: '$FNAM'"
 		return 1
@@ -1434,7 +1434,7 @@ ssched_diff()
 
 	# whatever errors diff gets about no files, etc,
 	#  just poop 'em on to the user
-	${SSCHED_DIFF:-diff} "$SDIR/$FPATH" "$FNAM"
+	${SSCHED_DIFF:-diff} --new-file "$SDIR/$FPATH" "$FNAM"
 	ES=$?
 
 	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
