@@ -5,3 +5,12 @@
 * remove_source fails if the source fileset has been removed by hand
   already.  it should at least remove the config file entries for
   that source.
+
+* need to categorize snapsched commands into root commands, required by
+  the `scheduled` snapshot program and by admin commands that should/need
+  to be run by root, and user commands like diff and get.  some kind of
+  priviledge drop needs to be done for those commands, but the mount
+  part must be done by a priviledged program, so that needs to be figured
+  out.  sudo is not an option, because it isn't installed or used on
+  all systems.  perhaps autofs can be used to mount SNAP_MOUNT_DIR
+  or something.  we are considering autofs for another feature as well.
