@@ -1,1 +1,7 @@
-* scheduled snapshots at the same time often step on each other, causing one or both to fail, or to produce the wrong error messages if they would have failed anyway. (monthly default TOD is 22:05 for all sources)
+* scheduled snapshots at the same time often step on each other, causing
+  one or both to fail, or to produce the wrong error messages if they
+  would have failed anyway. (monthly default TOD is 22:05 for all sources)
+
+* remove_source fails if the source fileset has been removed by hand
+  already.  it should at least remove the config file entries for
+  that source.

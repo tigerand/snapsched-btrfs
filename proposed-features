@@ -1,9 +1,20 @@
-create package /etc/cron.d file to get away from anacron and
-cron.{hour,dai,week,month}ly files and set times.  then add ability to
-set the times and days for hourly, daily, weekly, and monthly.
+* create package /etc/cron.d file to get away from anacron and
+  cron.{hour,dai,week,month}ly files and set times.  then add ability to
+  set the times and days for hourly, daily, weekly, and monthly.
+   DONE
 
-snapshot log, displayable from snapsched command
+* snapshot log, displayable from snapsched command
 
-code to deal with pre-existing snapshot with same name as the new one.
+* code to deal with pre-existing snapshot with same name as the new one.
 
+* a feature allowing recursive copying/diffing out of a scheduled snapshot
+  into a mounted filesystem
 
+* an automount map that mounts into EVERY directory a .snapshots/
+  directory that allows relative access to scheduled snapshot files
+  that are below that directory, ie.:
+
+  ls .snapshots/hourly/<YYYY-MM-DD_HH>
+
+  would list files below the CWD in this snapshot, and they would be
+  accessible for diffing, copying, etc.
