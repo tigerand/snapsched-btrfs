@@ -1249,6 +1249,7 @@ ssched_add_source()
 	ssched_create_cronjobs $NSRC yes
 }
 
+
 # remove a subvolume to the config for scheduled snapshots
 #command
 ssched_remove_source()
@@ -1353,7 +1354,6 @@ ssched_remove_source()
 }
 
 
-
 #command
 ssched_diff()
 {
@@ -1435,6 +1435,109 @@ ssched_diff()
 	# whatever errors diff gets about no files, etc,
 	#  just poop 'em on to the user
 	${SSCHED_DIFF:-diff} --new-file "$SDIR/$FPATH" "$FNAM"
+	ES=$?
+
+	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+
+	return $ES
+}
+
+
+# copy a file out of a snapshot.  code could conceivably be combined with
+# the diff command at some point.  also, could add support for things
+# like rsync and the like.  use your own copy command in SSCHED_GET if you dare
+#command
+ssched_get()
+{
+	local NSRC FNAM ES BN=1
+	local -l INTTYPE
+	local CP_CMD
+	local USTR="usage: get <source-name> <int-type> <file-name> <out-file-name> [<back-num>]\noutput filename can be '-' for stdout"
+
+	if [ "$#" -lt 3 ] ; then
+		serr "wrong number of arguments: $#"
+		echo "$USTR"
+		return 1
+	fi
+
+	NSRC="$1"
+	INTTYPE="$2"
+	FNAM="$3"
+	ONAM="$4"
+	shift;shift;shift;shift
+	if [ "$#" -eq 1 ] ; then
+		BN="$1"
+		if [ "$BN" -lt 1 ] ; then
+			serr "$USTR"
+			serr "Back-num invalid value '$BN'"
+			return 1
+		fi
+	fi
+
+	if [ -e "$ONAM" -a ! -w "$ONAM" ] ; then
+		serr "$USTR"
+		serr "File exists, but you can't write to it: '$ONAM'"
+		return 1
+	fi
+
+	# validate NSRC, and read config file if necessary
+	_ssched_validate_nsrc NSRC "$USTR" ||
+		return 1
+
+	# validate int type
+	case "$INTTYPE" in
+		h|hour*)
+			INTR=hourly
+			;;
+		d|day*|daily|dailies)
+			INTR=daily
+			;;
+		w|week*)
+			INTR=weekly
+			;;
+		m|month*)
+			INTR=monthly
+			;;
+		*)
+			serr -e "$USTR"
+			serr "Bad interval value: '$INTTYPE'"
+			return 1
+			;;
+	esac
+
+	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
+
+	SDIR="${CONFIG[SNAP_MOUNT_DIR]}/${CONFIG[SNAP_BASE_DIR]}/$NSRC/`_ssched_int2dir $INTR`"
+	if [ "$BN" -gt "`\ls $SDIR | wc -l`" ] ; then
+		serr "Specified back-num '$BN' is greater than available '`\ls $SDIR | wc -l`'"
+		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		return 1
+	fi
+	SDIR="$SDIR/`\ls $SDIR | tail -$BN | head -1`"
+
+	if expr match "$FNAM" / >/dev/null ; then
+		FPATH="$FNAM"
+	else
+		FPATH="`pwd`/$FNAM"
+	fi
+	FPATH=${FPATH#/}
+
+	if [ -d "$SDIR/$FPATH" ] ; then
+		serr "$USTR"
+		serr "Can't copy directories (yet). '${SDIR#${CONFIG[SNAP_MOUNT_DIR]}}/$FPATH'"
+		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		return 1
+	fi
+
+	CP_CMD=cp
+	if [ \( ${#ONAM} = 1 \) -a \( "$ONAM" = "-" \) ] ; then
+		ONAM=
+		CP_CMD=cat
+	fi
+
+	# whatever errors cp gets about no files, etc,
+	#  just poop 'em on to the user
+	${SSCHED_GET:-$CP_CMD} "$SDIR/$FPATH" "$FNAM" $ONAM
 	ES=$?
 
 	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
