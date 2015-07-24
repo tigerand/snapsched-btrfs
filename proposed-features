@@ -18,3 +18,9 @@
 
   would list files below the CWD in this snapshot, and they would be
   accessible for diffing, copying, etc.
+
+* a command to delete a file from scheduled snapshots, by specific interval,
+  or all snapshots in that interval type, or in all scheduled snapshots.
+
+* a command to list a file in scheduled snapshots, by specific interval,
+  or all snapshots in that interval type, or in all scheduled snapshots.
