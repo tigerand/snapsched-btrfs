@@ -58,7 +58,7 @@ _ssched_comp()
 		# figure out what the next argument should be based on the command
 		case "$3" in
 			set_dailies|set_weeklies|set_monthlies|set_hourlies) ;&
-			mod_maxsnapcount|remove_source|diff)
+			mod_maxsnapcount|remove_source|diff|get)
 				COMPREPLY=(`list_srcs $2`)
 				;;
 			print_config)
