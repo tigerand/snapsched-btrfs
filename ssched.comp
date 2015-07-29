@@ -47,7 +47,7 @@ _ssched_comp()
 		fi
 
 		# try to find a match to the partial word on the command line
-		# to the words in the VOCATIONS array.  return all matches in COMREPLY
+		# to the words in the VOCATIONS array.  return all matches in COMPREPLY
 		for V in $CMD_LST ; do
 			if expr match "$V" "$2" >/dev/null ; then
 				COMPREPLY+="$V"
@@ -62,13 +62,17 @@ _ssched_comp()
 				COMPREPLY=(`list_srcs $2`)
 				;;
 			print_config)
-				COMREPLY=(RETURN)
+				COMPREPLY=("" RETURN)
 				;;
 			list_sources)
-				COMREPLY=("[-v]")
+				COMPREPLY=("" "-v")
 				;;
 			lssnap)
-				COMREPLY=("[`list_srcs`]")
+				if [ "$2" ] ; then
+					COMPREPLY=(`list_srcs $2`)
+				else
+					COMPREPLY=("" `list_srcs`)
+				fi
 				;;
 			set_btrfspath)
 				;;
