@@ -180,7 +180,7 @@ _ssched_mount_rootvol()
 		return 1
 	fi
 
-	if ! grep -q "$BPATH" /proc/mounts ; then
+	if ! grep -qw "$BPATH" /proc/mounts ; then
 		mount "$BPATH" || return $?
 		UMNT=true
 	fi

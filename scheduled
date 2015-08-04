@@ -3,7 +3,6 @@
 
 export PRE=/usr/local
 
-MAILTO=root
 exec 2>&1
 
 # create the scheduled snapshots.  called by cron.
@@ -85,7 +84,7 @@ TDIR="${TBASE}/$SNAME"
 
 _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
 	ES=$?
-	serr "Unable to mount root volume '${CONFIG[SNAP_MOUNT_DIR]}'"
+	serr "Unable to mount root volume '${CONFIG[SNAP_MOUNT_DIR]}': $ES"
 	if [ ! -d "${CONFIG[SNAP_MOUNT_DIR]}" ] ; then
 		serr "Directory  '${CONFIG[SNAP_MOUNT_DIR]}' does not exist."
 	elif [ "$ES" -eq 4 ] ; then
@@ -98,7 +97,7 @@ _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
 
 if [ ! -d "$TBASE" ] ; then
 	mkdir -p "$TBASE" || {
-		serr "Failed to create the snapsched storage directory $TBASE"
+		serr "Failed to create the snapsched storage directory ${TBASE}: $?"
 		serr "Cannot create snapshot '$FREQ/$SNAME'."
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 		exit 1
@@ -106,7 +105,7 @@ if [ ! -d "$TBASE" ] ; then
 fi
 
 if [ -d "$TDIR" ] ; then
-	serr -e "\tFAIL: Snapshot target directory already exists!"
+	serr -e "\tFAIL: Snapshot target directory '$TDIR' already exists!"
 	cd $TBASE
 	serr -e "\t`ls -ld $SNAME`"
 	serr "Cannot create snapshot '$FREQ/$SNAME'."

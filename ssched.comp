@@ -39,18 +39,17 @@ _ssched_comp()
 
 	# if the word to complete is the snapsched command
 	if [ "$1" = "$3" ] ; then
+
 		# if the word being completed is null, return command list
-		# from the VOCATIONS array
 		if [ -z "$2" ] ; then
 			COMPREPLY=($CMD_LST)
 			return
 		fi
 
 		# try to find a match to the partial word on the command line
-		# to the words in the VOCATIONS array.  return all matches in COMPREPLY
 		for V in $CMD_LST ; do
 			if expr match "$V" "$2" >/dev/null ; then
-				COMPREPLY+="$V"
+				COMPREPLY+=("$V")
 			fi
 		done
 		return
