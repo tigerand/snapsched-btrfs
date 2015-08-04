@@ -7,7 +7,7 @@
 _ssched_comp()
 {
 	local V
-	local CMD_LST=`grep -A 1 -x '#command' /usr/local/lib/snapsched/snapsched-funcs | sed -e '/#command/d' -e '/--/d' -e 's/()//' -e 's/^ssched_//'`
+	local CMD_LST=`grep -A 1 '^#command' /usr/local/lib/snapsched/snapsched-funcs | sed -e '/^#command/d' -e '/^--$/d' -e 's/()//' -e 's/^ssched_//'`
 
 	# the first argument is the command whose args are being completed
 	# the second argument is the word being completed
