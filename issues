@@ -14,3 +14,8 @@
   out.  sudo is not an option, because it isn't installed or used on
   all systems.  perhaps autofs can be used to mount SNAP_MOUNT_DIR
   or something.  we are considering autofs for another feature as well.
+
+* `get' :	should take a second argument for the destination of a
+			file, as well as the interval argument!
+		:	installs the file as owned by root, when it should retain
+			all the original ownership and permissions
