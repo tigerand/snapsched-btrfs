@@ -144,6 +144,7 @@ if [ `echo ${TBASE}/* | wc -w` -ge "$MAX_SCNT" ] ; then
 	omsg < $MTMP
 	# output a blank line for formatting
 	omsg ""
+	_ssched_rmtemp $MTMP
 fi
 
 # snap it
