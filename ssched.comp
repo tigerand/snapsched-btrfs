@@ -67,11 +67,7 @@ _ssched_comp()
 				COMPREPLY=("" "-v")
 				;;
 			lssnap)
-				if [ "$2" ] ; then
-					COMPREPLY=(`list_srcs $2`)
-				else
-					COMPREPLY=("" `list_srcs`)
-				fi
+				COMPREPLY=(`list_srcs $2`)
 				;;
 			set_btrfspath)
 				;;

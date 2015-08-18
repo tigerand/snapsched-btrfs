@@ -248,13 +248,13 @@ ssched_lssnap()
 		INT_LIST=${INT_LIST[*]/ies/y}
 		for I in ${INT_LIST[*]} ; do
 			case $I in
-				hourly|daily|weekly|monthly)
+				hourly|h|daily|d|weekly|w|monthly|m)
 					:
 					;;
 				*)
 					serr "$0: invalid interval argument: '$I'"
 					serr " interval argument is a [comma separated] list of one"
-					serr " or more of {hourly, daily, weekly, montly}"
+					serr " or more of {hourly, daily, weekly, monthly}"
 					return 1
 					;;
 			esac
