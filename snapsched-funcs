@@ -76,20 +76,8 @@ _ssched_rmtemp()
 # arg: {hourly,daily,weekly,monthly}
 _ssched_int2l()
 {
-	case $1 in
-		hourly)
-			echo H
-		;;
-		daily)
-			echo D
-		;;
-		weekly)
-			echo W
-		;;
-		monthly)
-			echo M
-		;;
-	esac
+	local -u I=${1:0:1}
+	echo $I
 }
 
 
@@ -732,7 +720,7 @@ ssched_mod_maxsnapcount()
 	NMAX="$3"
 
 	case "$INT" in
-		hourly)
+		h|hour|hourly)
 			if [ "$NMAX" -eq 0 ] ; then
 				:
 			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 36 \) ] ; then
@@ -741,7 +729,7 @@ ssched_mod_maxsnapcount()
 				return 1
 			fi
 			;;
-		daily)
+		d|day|daily)
 			if [ "$NMAX" -eq 0 ] ; then
 				:
 			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 14 \) ] ; then
@@ -750,7 +738,7 @@ ssched_mod_maxsnapcount()
 				return 1
 			fi
 			;;
-		weekly)
+		w|week|weekly)
 			if [ "$NMAX" -eq 0 ] ; then
 				:
 			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 10 \) ] ; then
@@ -759,7 +747,7 @@ ssched_mod_maxsnapcount()
 				return 1
 			fi
 			;;
-		monthly)
+		m|month|monthly)
 			if [ "$NMAX" -eq 0 ] ; then
 				:
 			elif [ \( "$NMAX" -lt 2 \) -o \( "$NMAX" -gt 24 \) ] ; then
@@ -779,7 +767,7 @@ ssched_mod_maxsnapcount()
 	PLURAL=${INT%y}ies
 	OMAX=${CONFIG[SSRC_${NSRC}%${INTRVAL}_MSC]}
 
-	if [ $NMAX = $OMAX ] ; then
+	if [ "$NMAX" -eq "$OMAX" ] ; then
 		echo "No change for '$NSRC' $PLURAL"
 		return 0
 	fi
