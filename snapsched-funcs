@@ -217,7 +217,7 @@ ssched_list_sources()
 ssched_lssnap()
 {
 	local NSRC
-	local I S SRCS_LIST SDIR
+	local I S X SRCS_LIST SDIR
 	local -a INT_LIST
 	local -u IUP
 
@@ -233,14 +233,23 @@ ssched_lssnap()
 
 	if [ "$#" -ge 1 ] ; then
 		INT_LIST=(${1//,/ })
-		INT_LIST=${INT_LIST[*]/ies/y}
-		for I in ${INT_LIST[*]} ; do
-			case $I in
-				hourly|h|daily|d|weekly|w|monthly|m)
-					:
+		INT_LIST=(${INT_LIST[*]//ies/y})
+		for X in ${!INT_LIST[*]} ; do
+			case ${INT_LIST[$X]} in
+				h|hour|hourly)
+					INT_LIST[$X]=hourly
+					;;
+				d|day|daily)
+					INT_LIST[$X]=daily
+					;;
+				w|week|weekly)
+					INT_LIST[$X]=weekly
+					;;
+				m|month|monthly)
+					INT_LIST[$X]=monthly
 					;;
 				*)
-					serr "$0: invalid interval argument: '$I'"
+					serr "$0: invalid interval argument: '${INT_LIST[$X]}'"
 					serr " interval argument is a [comma separated] list of one"
 					serr " or more of {hourly, daily, weekly, monthly}"
 					return 1
