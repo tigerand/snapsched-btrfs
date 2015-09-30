@@ -125,7 +125,7 @@ _ssched_read_config()
 
 _ssched_output_config()
 {
-
+	local X
 	for X in "${!CONFIG[@]}" ; do
 		echo "CONFIG[$X]=\"${CONFIG[$X]}\""
 	done
@@ -182,6 +182,62 @@ _ssched_umount_rootvol()
 	if $UMNT ; then
 		umount "$BPATH"
 	fi
+}
+
+
+# delete specific cron entry in $ETC/cron.{hour,dai,week,month}ly/ directories
+_ssched_remove_cron()
+{
+	local NSRC=$1
+	local INT=$2
+	local CRND=$ETC/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
+
+	rm -f "$CRND"
+}
+
+
+# list existing snapshots in a single src/interval
+# args: 2 - source name
+# args: 2 - {count|list} count: returns # of snaps
+#						 list: list snaps w/ optional tab indents
+#		3 - interval name
+#		4 - [optional] number of tabs to indent each line of output
+_ssched_lssnap_single()
+{
+	local SDIR="${CONFIG[SNAP_MOUNT_DIR]}/${CONFIG[SNAP_BASE_DIR]}/$1"
+	local COUNT=false
+	local -u INT=$3
+	local NTABS=$4
+	local TABSTR
+	local T
+
+	if [ "$2" = count ] ; then
+		COUNT=true
+	elif [ "$2" = list ] ; then
+		COUNT=false
+	else
+		# usage: must be count or list
+		return 2
+	fi
+	if [ ! -d $SDIR/${CONFIG[SNAP_${INT}_DIR]} ] ; then
+		$COUNT && echo 0
+		return 1
+	fi
+	if [ -z "$NTABS" ] ; then
+		NTABS=0
+	elif [ "$NTABS" -gt 4 ] ; then
+		NTABS=4   # max tabs is arbitrarily set to 4
+	fi
+
+	if ! $COUNT ; then
+		for ((T=NTABS; T; T--)) ; do
+			TABSTR+="\t"
+		done
+	fi
+
+	ls $SDIR/${CONFIG[SNAP_${INT}_DIR]} | sed "s/^/$TABSTR/" | (
+		$COUNT && wc -l || cat
+	)
 }
 
 
@@ -285,24 +341,12 @@ ssched_lssnap()
 			IUP=$I
 			if [ -d $SDIR/${CONFIG[SNAP_${IUP}_DIR]} ] ; then
 				echo "    ${I%y}ies:"
-				ls $SDIR/${CONFIG[SNAP_${IUP}_DIR]} | sed 's/^/\t/'
+				_ssched_lssnap_single $S list $IUP 1
 			fi
 		done
 	done
 
 	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
-}
-
-
-
-# delete specific cron entry in $ETC/cron.{hour,dai,week,month}ly/ directories
-_ssched_remove_cron()
-{
-	local NSRC=$1
-	local INT=$2
-	local CRND=$ETC/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
-
-	rm -f "$CRND"
 }
 
 
@@ -712,6 +756,7 @@ ssched_mod_maxsnapcount()
 	local INT INTRVAL
 	local NMAX
 	local USTR MSG PLURAL
+	local REDUCING
 
 	USTR='usage: mod_maxsnapcount <file-system> <interval> <new max>\ninterval: one of hourly, daily, weekly, monthly\nnew-max: the new max snapcount'
 
@@ -780,10 +825,15 @@ ssched_mod_maxsnapcount()
 		echo "No change for '$NSRC' $PLURAL"
 		return 0
 	fi
+
+	REDUCING=true
 	if [ "$NMAX" -eq 0 ] ; then
 		MSG="Turning $PLURAL OFF for source '$NSRC'"
+	elif [ "$NMAX" -lt "$OMAX" ] ; then
+		MSG="Reducing $INT max snapcount for '$NSRC' from '$OMAX' to '$NMAX'"
 	else
 		MSG="Changing $INT max snapcount for '$NSRC' from '$OMAX' to '$NMAX'"
+		REDUCING=false
 	fi
 
 	echo "$MSG"
@@ -791,28 +841,66 @@ ssched_mod_maxsnapcount()
 	CONFIG["SSRC_${NSRC}%${INTRVAL}_MSC"]=$NMAX
 
 	if [ "$NMAX" -eq 0 ] ; then
+		# we're shutting snapshots for this interval off
 		_ssched_rm_pkgcrontab $NSRC $INT
 		_ssched_remove_cron $NSRC $INT
-	else
+	elif [ "$OMAX" -eq 0 ] ; then
 		# if creating a new scheduled snapshot, make sure it's crons
 		# are intact/created
-		if [ "$OMAX" -eq 0 ] ; then
-			if [ "${CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]}" ] ; then
-				# if it has special times/ set, then add
-				# back the entry in the package crontab
-				ssched_set_$PLURAL $NSRC \
-					"${CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]}" \
-					"${CONFIG[SSRC_$NSRC%${INTRVAL}_TOD]}" \
-					yes
-				# no need to write the config file twice
-				return
-			else
-				_ssched_submit_cron $NSRC $INT
-			fi
+		if [ "${CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]}" ] ; then
+			# if it has special times/ set, then add
+			# back the entry in the package crontab
+			ssched_set_$PLURAL $NSRC \
+				"${CONFIG[SSRC_$NSRC%${INTRVAL}_DAT]}" \
+				"${CONFIG[SSRC_$NSRC%${INTRVAL}_TOD]}" \
+				yes
+
+			# no need to write the config file twice
+			# and since we're not reducing, we can return
+			return
+		else
+			_ssched_submit_cron $NSRC $INT
 		fi
 	fi
 
 	_ssched_write_config
+
+	if $REDUCING ; then
+		if [ "`_ssched_list single $NSRC count $INT`" -gt "$NMAX" ] ; then
+			echo "WARNING: You have reduced the max snap count for $PLURAL,"
+			echo "but there are currently more snapshots than that, and"
+			echo "the excess won't be automatically purged, which will likely"
+			echo "cause forseen and unforseen problems."
+			echo
+			echo "If you want the oldest $((`_ssched_list single $NSRC count $INT` - $NMAX)) snapshots deleted now,"
+			echo "then select that option from this menu:"
+			PS3="Select the number corresponding to the desired action: "
+			select ACTION in
+				"Delete the excess snapshots"
+				"List the snapshots for interval '$INT'"
+				"Take no additional action at this time." ; do
+				if [ "$REPLY" -a \( "$REPLY" -gt 0 -a "$REPLY" -le 3 \) ] ; then
+					break
+				fi
+			done
+			if [ -z "$REPLY" -o -z "$ACTION" ] ; then
+				echo "No further action will be taken at this time."
+			else
+				case $REPLY in
+					1)
+						echo "it would be nice if we were deleting the snapshots right now, but we're not"
+						;;
+					2)
+						echo "List of existing snapshots for '$INT':"
+						_ssched_lssnap_single $NSRC list $INT 1
+						;;
+					3)  # no action
+						echo "No further action will be taken at this time."
+						;;
+				esac
+			fi
+		fi
+	fi
 }
 
 ####
@@ -822,7 +910,7 @@ ssched_mod_maxsnapcount()
 # to take place.  They can be combined with the MAX snapcount setting for
 # their interval (hourly, daily, weekly, monthly) to fine tune a particular
 # interval's scheduled snapping behavior.
-# 
+#
 # Example: to set up daily snapshots of a filesystem named 'work' that
 # most suits your work habits, or those who's data is on the filesystem,
 # you decide you want the daily snapshots to fire at 11:00PM after most
