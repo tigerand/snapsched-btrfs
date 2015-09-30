@@ -875,9 +875,9 @@ ssched_mod_maxsnapcount()
 			echo "If you want the oldest $((`_ssched_list single $NSRC count $INT` - $NMAX)) snapshots deleted now,"
 			echo "then select that option from this menu:"
 			PS3="Select the number corresponding to the desired action: "
-			select ACTION in
-				"Delete the excess snapshots"
-				"List the snapshots for interval '$INT'"
+			select ACTION in \
+				"Delete the excess snapshots" \
+				"List the snapshots for interval '$INT'" \
 				"Take no additional action at this time." ; do
 				if [ "$REPLY" -a \( "$REPLY" -gt 0 -a "$REPLY" -le 3 \) ] ; then
 					break
