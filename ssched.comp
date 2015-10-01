@@ -64,7 +64,7 @@ _ssched_comp()
 				COMPREPLY=("" RETURN)
 				;;
 			list_sources)
-				COMPREPLY=("" "-v")
+				COMPREPLY=("" "-l" "-d")
 				;;
 			lssnap)
 				COMPREPLY=(`list_srcs $2`)
