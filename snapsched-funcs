@@ -244,23 +244,38 @@ _ssched_lssnap_single()
 #command
 ssched_list_sources()
 {
-	local SN SRCS
+	local S SN SRCS DBS
 
 	_ssched_read_config
 
 	SRCS=`_ssched_list_srcs`
 
-	if [ "$1" = -v ] ; then
-		echo -e "\t       Max\tMax\tMax\tMax\tHourly\tDaily\t\tWeekly\t  Monthly"
-		echo -e "Fileset\t    hourlies dailies weeklies monthlies  TOD\tDAYS/TOD\tDAY/TOD   DOM/TOD            Databases"
+	if [ "$1" = -l ] ; then
+		echo -e "\t     Max Max Max Max Hourly  Daily          Weekly    Monthly"
+		echo -e "Fileset\t   hours day  wk mon   TOD  DAYS/TOD       DAY/TOD   DOM/TOD"
 
 		for S in $SRCS ; do
-			if [ `expr length $S` -gt 12 ] ; then
-				SN=`expr substr $S 1 12`
+			if [ ${#S} -gt 12 ] ; then
+				SN=${S:0:11}
 			else
 				SN="$S"
 			fi
-			printf " %-14s%2d%9d%8d%8d\t%-8s%-16s%-10s%-18s %s\n" "$SN" ${CONFIG[SSRC_$S%H_MSC]} ${CONFIG[SSRC_$S%D_MSC]} ${CONFIG[SSRC_$S%W_MSC]} ${CONFIG[SSRC_$S%M_MSC]} "${CONFIG[SSRC_$S%H_TOD]-unset}" "${CONFIG[SSRC_$S%D_DAT]-n}/${CONFIG[SSRC_$S%D_TOD]-a}" "${CONFIG[SSRC_$S%W_DAT]-n}/${CONFIG[SSRC_$S%W_TOD]-a}" "${CONFIG[SSRC_$S%M_DAT]-n}/${CONFIG[SSRC_$S%M_TOD]-a}" `echo "${CONFIG[SSRC_$S%DBS]}" | sed 's/ /,/g'`
+			printf "%-14s%2d%4d%4d%4d %-6s  %-16s%-10s%-18s %s\n" "$SN" ${CONFIG[SSRC_$S%H_MSC]} ${CONFIG[SSRC_$S%D_MSC]} ${CONFIG[SSRC_$S%W_MSC]} ${CONFIG[SSRC_$S%M_MSC]} "${CONFIG[SSRC_$S%H_TOD]:-unset}" "${CONFIG[SSRC_$S%D_DAT]:-n}/${CONFIG[SSRC_$S%D_TOD]:-a}" "${CONFIG[SSRC_$S%W_DAT]:-n}/${CONFIG[SSRC_$S%W_TOD]:-a}" "${CONFIG[SSRC_$S%M_DAT]-n}/${CONFIG[SSRC_$S%M_TOD]:-a}"
+		done
+	elif [ "$1" = -d ] ; then
+		for S in $SRCS ; do
+			if [ ${#S} -gt 22 ] ; then
+				SN=${S:0:21}
+			else
+				SN="$S"
+			fi
+			echo -e "Fileset                Databases"
+			if [ "${CONFIG[SSRC_$S%DBS]}" ] ; then
+				DBS="${CONFIG[SSRC_$S%DBS]//,/ }"
+			else
+				DBS=none
+			fi
+			printf "%-22s %-s\n" "$SN" "$DBS"
 		done
 	else
 		echo $SRCS

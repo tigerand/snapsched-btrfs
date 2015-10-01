@@ -54,8 +54,10 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
 	echo "                    attempt to pause just that version of postgres."
 
 	echo "list_sources :   List all the sources in the config file as words"
-	echo "                 Option -v lists sources one per line along with the"
-	echo "                 config options for that source"
+	echo "                 Option -l lists sources one per line along with the"
+	echo "                 snapshot interval/scheduling options for that source"
+	echo "                 Option -d lists sources one per line along with the"
+	echo "                 database flags for that source"
 
 	echo "remove_source :  Remove a filesystem from the config file"
 	echo "                 Argument: <filesystem-name>"
