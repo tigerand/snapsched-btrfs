@@ -1554,7 +1554,7 @@ ssched_get()
 	local CP_CMD
 	local USTR="usage: get <source-name> <int-type> <file-name> <out-file-name> [<back-num>]\noutput filename can be '-' for stdout"
 
-	if [ "$#" -lt 3 ] ; then
+	if [ "$#" -lt 4 ] ; then
 		serr "wrong number of arguments: $#"
 		echo "$USTR"
 		return 1
@@ -1572,6 +1572,12 @@ ssched_get()
 			serr "Back-num invalid value '$BN'"
 			return 1
 		fi
+	fi
+
+	if [ -z "$ONAM" ] ; then
+		serr "missing output file name"
+		echo "$USTR"
+		return 1
 	fi
 
 	if [ -e "$ONAM" -a ! -w "$ONAM" ] ; then
@@ -1622,6 +1628,12 @@ ssched_get()
 	fi
 	FPATH=${FPATH#/}
 
+	if [ ! -e "$SDIR/$FPATH" ] ; then
+		serr "Source file '$SDIR/$FPATH' does not exist."
+		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		return 1
+	fi
+
 	if [ -d "$SDIR/$FPATH" ] ; then
 		serr "$USTR"
 		serr "Can't copy directories (yet). '${SDIR#${CONFIG[SNAP_MOUNT_DIR]}}/$FPATH'"
@@ -1635,9 +1647,10 @@ ssched_get()
 		CP_CMD=cat
 	fi
 
+# FIXME # resulting file has wrong ownership/permissions
 	# whatever errors cp gets about no files, etc,
 	#  just poop 'em on to the user
-	${SSCHED_GET:-$CP_CMD} "$SDIR/$FPATH" "$FNAM" $ONAM
+	${SSCHED_GET:-$CP_CMD} "$SDIR/$FPATH" ${ONAM:+"$ONAM"}
 	ES=$?
 
 	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
