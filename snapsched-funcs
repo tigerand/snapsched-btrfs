@@ -80,14 +80,12 @@ _ssched_int2l()
 	echo $I
 }
 
-
-# translate interval to snapsched sub dir for that interval
-# arg: {hourly,daily,weekly,monthly}
-_ssched_int2dir()
+# translate interval arg to nominalized interval name
+_ssched_nom_int()
 {
-	local -u I
+	local -l I
 
-	case $1 in
+	case "$1" in
 		hourly|daily|weekly|monthly)
 			I=$1
 		;;
@@ -104,6 +102,18 @@ _ssched_int2dir()
 			I=monthly
 		;;
 	esac
+
+	echo $I
+}
+
+
+# translate interval to snapsched sub dir for that interval
+# arg: {hourly,daily,weekly,monthly}
+_ssched_int2dir()
+{
+	local -u I
+
+	I=`_ssched_nom_int $1`
 	echo ${CONFIG[SNAP_${I}_DIR]}
 }
 
@@ -785,7 +795,7 @@ ssched_mod_maxsnapcount()
 	_ssched_validate_nsrc NSRC "$USTR" ||
 		return 1
 
-	INT="$2"
+	INT=`_ssched_nom_int $2`
 	NMAX="$3"
 
 	case "$INT" in
@@ -881,13 +891,19 @@ ssched_mod_maxsnapcount()
 	_ssched_write_config
 
 	if $REDUCING ; then
-		if [ "`_ssched_list single $NSRC count $INT`" -gt "$NMAX" ] ; then
+
+		_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
+			echo "Reducing: failed to mount ${CONFIG[SNAP_MOUNT_DIR]}.  Cannot delete excess snapshots."
+			return 1
+		}
+
+		if [ "`_ssched_lssnap_single $NSRC count $INT`" -gt "$NMAX" ] ; then
 			echo "WARNING: You have reduced the max snap count for $PLURAL,"
 			echo "but there are currently more snapshots than that, and"
 			echo "the excess won't be automatically purged, which will likely"
 			echo "cause forseen and unforseen problems."
 			echo
-			echo "If you want the oldest $((`_ssched_list single $NSRC count $INT` - $NMAX)) snapshots deleted now,"
+			echo "If you want the oldest $((`_ssched_lssnap_single $NSRC count $INT` - $NMAX)) snapshots deleted now,"
 			echo "then select that option from this menu:"
 			PS3="Select the number corresponding to the desired action: "
 			select ACTION in \
@@ -915,6 +931,7 @@ ssched_mod_maxsnapcount()
 				esac
 			fi
 		fi
+		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 	fi
 }
 
