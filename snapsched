@@ -147,5 +147,5 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
 	exit 0
 fi
 
-eval ssched_$CMD "$@"
+ssched_$CMD "$@"
 

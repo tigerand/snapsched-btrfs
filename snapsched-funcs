@@ -1569,11 +1569,12 @@ ssched_get()
 	local NSRC FNAM ES BN=1
 	local -l INTTYPE
 	local CP_CMD
+	local ONAM
 	local USTR="usage: get <source-name> <int-type> <file-name> <out-file-name> [<back-num>]\noutput filename can be '-' for stdout"
 
 	if [ "$#" -lt 4 ] ; then
 		serr "wrong number of arguments: $#"
-		echo "$USTR"
+		echo -e "$USTR"
 		return 1
 	fi
 
@@ -1585,7 +1586,7 @@ ssched_get()
 	if [ "$#" -eq 1 ] ; then
 		BN="$1"
 		if [ "$BN" -lt 1 ] ; then
-			serr "$USTR"
+			serr -e "$USTR"
 			serr "Back-num invalid value '$BN'"
 			return 1
 		fi
@@ -1593,12 +1594,12 @@ ssched_get()
 
 	if [ -z "$ONAM" ] ; then
 		serr "missing output file name"
-		echo "$USTR"
+		echo -e "$USTR"
 		return 1
 	fi
 
 	if [ -e "$ONAM" -a ! -w "$ONAM" ] ; then
-		serr "$USTR"
+		serr -e "$USTR"
 		serr "File exists, but you can't write to it: '$ONAM'"
 		return 1
 	fi
@@ -1643,7 +1644,7 @@ ssched_get()
 	else
 		FPATH="`pwd`/$FNAM"
 	fi
-	FPATH=${FPATH#/}
+	FPATH="${FPATH#/}"
 
 	if [ ! -e "$SDIR/$FPATH" ] ; then
 		serr "Source file '$SDIR/$FPATH' does not exist."
@@ -1652,14 +1653,14 @@ ssched_get()
 	fi
 
 	if [ -d "$SDIR/$FPATH" ] ; then
-		serr "$USTR"
+		serr -e "$USTR"
 		serr "Can't copy directories (yet). '${SDIR#${CONFIG[SNAP_MOUNT_DIR]}}/$FPATH'"
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 		return 1
 	fi
 
 	CP_CMD=cp
-	if [ \( ${#ONAM} = 1 \) -a \( "$ONAM" = "-" \) ] ; then
+	if [ \( "${#ONAM}" = 1 \) -a \( "$ONAM" = "-" \) ] ; then
 		ONAM=
 		CP_CMD=cat
 	fi
@@ -1667,7 +1668,7 @@ ssched_get()
 # FIXME # resulting file has wrong ownership/permissions
 	# whatever errors cp gets about no files, etc,
 	#  just poop 'em on to the user
-	${SSCHED_GET:-$CP_CMD} "$SDIR/$FPATH" ${ONAM:+"$ONAM"}
+	${SSCHED_GET:-$CP_CMD} "$SDIR/$FPATH" "${ONAM:+"$ONAM"}"
 	ES=$?
 
 	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
