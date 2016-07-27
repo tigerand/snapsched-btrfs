@@ -18,18 +18,19 @@ fi
 # load the library routines
 . $PRE/lib/snapsched/snapsched-funcs
 
-if [ \( "$CMD" = "--list-funcs" \) -o \
-	\( "$CMD" = "-h" \) -o \
-	\( "$CMD" = "help" \) -o \
-	\( "$CMD" = "--help" \) ] ; then
-	echo "snapsched <cmd>"
-	echo "List of available commands:"
-	echo
+init_config_help()
+{
 	echo "init_config  :   Initialize the snapsched config file.  All previous"
 	echo "                 data in config file is erased."
+}
 
+print_config_help()
+{
 	echo "print_config :   Print out the contents of the config file"
+}
 
+add_source_help()
+{
 	echo "add_source   :   Add a btrfs filesystem subvolume to the config file "
 	echo "                 for scheduled snapshots.  Snapshot times and dates"
 	echo "                 will be the defaults."
@@ -52,26 +53,42 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
 	echo "                    suffixed by '-M.m' where M is the major version,"
 	echo "                    and m is minor version number.  snapsched will"
 	echo "                    attempt to pause just that version of postgres."
+}
 
+list_sources_help()
+{
 	echo "list_sources :   List all the sources in the config file as words"
 	echo "                 Option -l lists sources one per line along with the"
 	echo "                 snapshot interval/scheduling options for that source"
 	echo "                 Option -d lists sources one per line along with the"
 	echo "                 database flags for that source"
+	echo "                 D or 'def' in the listing means using the default."
+}
 
+remove_source_help()
+{
 	echo "remove_source :  Remove a filesystem from the config file"
 	echo "                 Argument: <filesystem-name>"
+}
 
+create_cronjobs_help()
+{
 	echo "create_cronjobs : Create cron entries for <filesystem-name>"
 	echo "                  Create or replace pre-existing cron entries for"
 	echo "                  <filesystem-name> source."
+}
 
+delete_cronjobs_help()
+{
 	echo "delete_cronjobs : Remove all cronjob files from"
 	echo "                  /etc/cron.{hourly,daily,weekly,monthly}"
 	echo "                  Called with no arguments, deletes them ALL."
 	echo "                  Called with one argument <filesystem-name> deletes"
 	echo "                      just the cron jobs for that filesystem."
+}
 
+lssnap_help()
+{
 	echo "lssnap          : list snapsched snapshots"
 	echo "                  Called with no arguments, lists all snapshots for"
 	echo "                    all configured sources."
@@ -81,7 +98,10 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
 	echo "                    lists all snapshots for that source/interval pairing."
 	echo "                    interval-list may be a comma separated list"
 	echo "                    from hourly, daily, weekly, monthly"
+}
 
+set_btrfspath_help()
+{
 	echo "set_btrfspath :  Set the main mount point for the btrfs filesystem"
 	echo "                 Arg: <btfs-mount-point>"
 	echo "                 Changes the mount point in the config file for the
@@ -95,7 +115,10 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
                    this mount point, and all source subvolumes specified
                    in the add_source command must be in this directory
                    (not subdirectories)."
+}
 
+set_dailies_help()
+{
 	echo "set_dailies :  Set the time and day-of-week for daily snapshots"
 	echo "                 Args: <fs> <days> [<time-of-day>]"
 	echo "                 fs is the file system subvolume to be snapped, as"
@@ -115,7 +138,29 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
                    You can put '+NN' where NN is number of minutes after
                    00:00 you want the snapshot to fire.  HH and MM both must
                    be TWO DIGITS, so use leading zeroes where necessary."
+}
 
+set_weeklies_help()
+{
+	echo "set_weeklies :  Set the time and day-of-week for weekly snapshots"
+	echo "                 Args: <fs> <day> [<time-of-day>]"
+	echo "                 fs is the file system subvolume to be snapped, as"
+	echo "                   already configured with add_source."
+	echo "                 day is the day of the week you would like"
+	echo "                   this weekly snapshot to happen.  Range is 1-7,
+                   but some crontab-like strings may be used, such
+                   as 'mon' or 'sun' and so on.
+                   Very little validation can be done for such strings, so
+                   make sure you get them right."
+	echo "                 ToD is the HH:MM format of the hour and minute to
+                   fire the snapshot on the day in question.  default: 00:00
+                   You can put '+NN' where NN is number of minutes after
+                   00:00 you want the snapshot to fire.  HH and MM both must
+                   be TWO DIGITS, so use leading zeroes where necessary."
+}
+
+set_monthlies_help()
+{
 	echo "set_monthlies :  Set the time and day-of-month for monthly snapshots"
 	echo "                 Args: <fs> <day-of-month> [<time-of-day>]"
 	echo "                 fs is the file system subvolume to be snapped, as"
@@ -131,7 +176,10 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
                    by the date/cron commands only, please."
 	echo "                 ToD is the HH:MM format of the hour and minute to
                    fire the snapshot on the day in question.  default: 22:00"
+}
 
+diff_help()
+{
 	echo "diff          :  diff a file against version in a scheduled snapshot"
 	echo "                 args: <snap-src> <int-type> <file-name> [<back-num>]"
 	echo "                 <snap-src> - the name of the source fileset"
@@ -143,6 +191,41 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
 
 	echo "get           :  same as diff, but instead copy the file from the"
 	echo "                 snapshot onto the existing file. DANGEROUS!"
+}
+
+if [ \( "$CMD" = "--list-funcs" \) -o \
+	\( "$CMD" = "-h" \) -o \
+	\( "$CMD" = "help" \) -o \
+	\( "$CMD" = "--help" \) ] ; then
+	echo "snapsched <cmd>"
+	echo "List of available commands:"
+	init_config_help
+	echo
+	print_config_help
+	echo
+	add_source_help
+	echo
+	list_sources_help
+	echo
+	remove_source_help
+	echo
+	create_cronjobs_help
+	echo
+	delete_cronjobs_help
+	echo
+	lssnap_help
+	echo
+	set_btrfspath_help
+	echo
+	set_dailies_help
+	echo
+	set_weeklies_help
+	echo
+	set_monthlies_help
+	echo
+	diff_help
+
+	echo
 
 	exit 0
 fi
