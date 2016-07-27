@@ -53,15 +53,19 @@ add_source_help()
 	echo "                    suffixed by '-M.m' where M is the major version,"
 	echo "                    and m is minor version number.  snapsched will"
 	echo "                    attempt to pause just that version of postgres."
+	echo
+	echo "           NOTE: for the foreseeable future, postgresql pausing"
+	echo "                 is not implemented."
 }
 
 list_sources_help()
 {
 	echo "list_sources :   List all the sources in the config file as words"
 	echo "                 Option -l lists sources one per line along with the"
-	echo "                 snapshot interval/scheduling options for that source"
+	echo "                 snapshot interval and scheduling options for that"
+	echo "                 source."
 	echo "                 Option -d lists sources one per line along with the"
-	echo "                 database flags for that source"
+	echo "                 database flags for that source."
 	echo "                 D or 'def' in the listing means using the default."
 }
 
@@ -228,6 +232,12 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
 	echo
 
 	exit 0
+fi
+
+if [ \( "$1" = "-h" \) -o \
+	\( "$1" = "--help" \) ] ; then
+	${CMD}_help || serr "Sorry, no help available for '$CMD'"
+	exit
 fi
 
 ssched_$CMD "$@"

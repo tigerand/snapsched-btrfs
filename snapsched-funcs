@@ -256,12 +256,6 @@ ssched_list_sources()
 {
 	local S SN SRCS DBS
 
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
-
 	_ssched_read_config
 
 	SRCS=`_ssched_list_srcs`
@@ -307,12 +301,6 @@ ssched_lssnap()
 	local I S X SRCS_LIST SDIR
 	local -a INT_LIST
 	local -u IUP
-
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
 
 	if [ "$#" -ge 1 ] ; then
 		NSRC="$1"
@@ -392,12 +380,6 @@ ssched_delete_cronjobs()
 {
 	local NSRC=$1
 
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
-
 	if [ -z "$NSRC" ] ; then
 		NSRC='*'
 	fi
@@ -414,12 +396,6 @@ ssched_create_cronjobs()
 	local NSRC=$1
 	local -l NO_READ_CFG=${2:0:1}
 	local JOB
-
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
 
 	if ! _ssched_validate_nsrc NSRC "usage: create_cronjobs <source-name>" $NO_READ_CFG; then
 		return 1
@@ -498,12 +474,6 @@ _ssched_mod_pkgcrontab()
 #command -- to initialize the config file
 ssched_init_config()
 {
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
-
 	if [ ! -d "$ETCDIR" ] ; then
 		mkdir -p "$ETCDIR"
 	fi
@@ -525,12 +495,6 @@ ssched_init_config()
 #command
 ssched_print_config()
 {
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
-
 	_ssched_read_config && _ssched_output_config || {
 		echo "Error reading config file.   Perhaps it doesn't exist."
 	}
@@ -726,12 +690,6 @@ THERE
 #command
 ssched_set_btrfspath()
 {
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
-
 	_ssched_read_config
 
 	_ssched_mount_rootvol "$1" || return $?
@@ -823,12 +781,6 @@ ssched_mod_maxsnapcount()
 	local NMAX
 	local USTR MSG PLURAL
 	local REDUCING
-
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
 
 	USTR='usage: mod_maxsnapcount <file-system> <interval> <new max>\ninterval: one of hourly, daily, weekly, monthly\nnew-max: the new max snapcount'
 
@@ -1019,12 +971,6 @@ ssched_set_dailies()
 	local UMSG="usage: set_dailies <source-name> <days> [<tod>]"
 	local THOUR=0 TMIN=1
 
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
-
 	if [ "$#" -lt 2 ] ; then
 		echo "$UMSG"
 		return 1
@@ -1116,12 +1062,6 @@ ssched_set_weeklies()
 	local THOUR=0 TMIN=1
 	local UMSG="usage: set_weeklies <source-name> <day> [<tod>]"
 
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
-
 	if [ "$#" -lt 2 ] ; then
 		echo "$UMSG"
 		return 1
@@ -1209,12 +1149,6 @@ ssched_set_monthlies()
 	local THOUR=22 TMIN=5
 	local CPROG CTIMES
 	local UMSG="usage: set_monthlies <source-name> <dom> [<tod>]"
-
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
 
 	if [ "$#" -lt 2 ] ; then
 		echo "$UMSG"
@@ -1315,12 +1249,6 @@ ssched_add_source()
 {
 	local SRCDIR NSRC H D W M
 	local -l ANS
-
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
 
 	# arguments:
 
@@ -1446,12 +1374,6 @@ ssched_remove_source()
 	local -l ANS
 	local I R
 
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
-
 	# arguments: filesystem name
 
 	# check caller
@@ -1555,12 +1477,6 @@ ssched_diff()
 	local -l INTTYPE
 	local USTR="usage: diff <source-name> <int-type> <file-name> [<back-num>]"
 
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
-
 	if [ "$#" -lt 3 ] ; then
 		serr "wrong number of arguments: $#"
 		echo "$USTR"
@@ -1654,12 +1570,6 @@ ssched_get()
 	local CP_CMD
 	local ONAM
 	local USTR="usage: get <source-name> <int-type> <file-name> <out-file-name> [<back-num>]\noutput filename can be '-' for stdout"
-
-	if [ \( "$1" = "-h" \) -o \
-		\( "$1" = "--help" \) ] ; then
-		${CMD}_help || serr "Sorry, no help available for '$CMD'"
-		return
-	fi
 
 	if [ "$#" -lt 4 ] ; then
 		serr "wrong number of arguments: $#"
