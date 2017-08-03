@@ -728,6 +728,7 @@ _ssched_validate_nsrc()
 		serr "$UMSG"
 		return 1
 	fi
+	# look for / anywhere in LSRC
 	if expr index "$LSRC" / >/dev/null ; then
 		LSRC=`basename $LSRC`
 		# strips off trailing slashes too
@@ -1569,6 +1570,9 @@ ssched_get()
 	local -l INTTYPE
 	local CP_CMD
 	local ONAM
+	local LUID
+	local CPARGS
+	local SUDOCMD=sudo
 	local USTR="usage: get <source-name> <int-type> <file-name> <out-file-name> [<back-num>]\noutput filename can be '-' for stdout"
 
 	if [ "$#" -lt 4 ] ; then
@@ -1597,14 +1601,23 @@ ssched_get()
 		return 1
 	fi
 
-	if [ -e "$ONAM" -a ! -w "$ONAM" ] ; then
-		serr -e "$USTR"
-		serr "File exists, but you can't write to it: '$ONAM'"
-		return 1
+	# hey, there could actually be a file named - in the directory.
+	if [ \( "${#ONAM}" != 1 \) -o \( "$ONAM" != "-" \) ] ; then
+		# this is mostly/always run as root, so this is a silly test for now.
+		if [ -e "$ONAM" -a ! -w "$ONAM" ] ; then
+			serr -e "$USTR"
+			serr "File exists, but you can't write to it: '$ONAM'"
+			return 1
+		fi
+	fi
+
+	LUID=`id -ru`
+	if [ "$LUID" = 0 ] ; then
+		SUDOCMD=
 	fi
 
 	# validate NSRC, and read config file if necessary
-	_ssched_validate_nsrc NSRC "$USTR" ||
+	$SUDOCMD _ssched_validate_nsrc NSRC "$USTR" ||
 		return 1
 
 	# validate int type
@@ -1628,16 +1641,19 @@ ssched_get()
 			;;
 	esac
 
-	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
+	$SUDOCMD _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
 
 	SDIR="${CONFIG[SNAP_MOUNT_DIR]}/${CONFIG[SNAP_BASE_DIR]}/$NSRC/`_ssched_int2dir $INTR`"
 	if [ "$BN" -gt "`\ls $SDIR | wc -l`" ] ; then
 		serr "Specified back-num '$BN' is greater than available '`\ls $SDIR | wc -l`'"
-		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		$SUDOCMD _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 		return 1
 	fi
 	SDIR="$SDIR/`\ls $SDIR | tail -$BN | head -1`"
 
+	# try to make it relative if FNAM doesn't start with /
+	# don't remember why the expr is needed, but no doubt it was a hard
+	# learned lesson
 	if expr match "$FNAM" / >/dev/null ; then
 		FPATH="$FNAM"
 	else
@@ -1647,14 +1663,14 @@ ssched_get()
 
 	if [ ! -e "$SDIR/$FPATH" ] ; then
 		serr "Source file '$SDIR/$FPATH' does not exist."
-		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		$SUDOCMD _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 		return 1
 	fi
 
 	if [ -d "$SDIR/$FPATH" ] ; then
 		serr -e "$USTR"
 		serr "Can't copy directories (yet). '${SDIR#${CONFIG[SNAP_MOUNT_DIR]}}/$FPATH'"
-		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+		$SUDOCMD _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 		return 1
 	fi
 
@@ -1662,15 +1678,19 @@ ssched_get()
 	if [ \( "${#ONAM}" = 1 \) -a \( "$ONAM" = "-" \) ] ; then
 		ONAM=
 		CP_CMD=cat
+	else
+		if [ -z "$SSCHED_GET" ] ; then
+			CPARGS="--reflink=auto"
+		fi
 	fi
 
 # FIXME # resulting file has wrong ownership/permissions
 	# whatever errors cp gets about no files, etc,
 	#  just poop 'em on to the user
-	${SSCHED_GET:-$CP_CMD} "$SDIR/$FPATH" "${ONAM:+"$ONAM"}"
+	${SSCHED_GET:-$CP_CMD} $CPARGS "$SDIR/$FPATH" "${ONAM:+"$ONAM"}"
 	ES=$?
 
-	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+	$SUDOCMD _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
 	return $ES
 }

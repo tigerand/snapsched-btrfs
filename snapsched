@@ -4,6 +4,7 @@
 # depends: if ({mysql,postgresql} database specified) {mysql,postgresql}-client
 
 export PRE=/usr/local
+PRE=.
 
 # uber snapshced command
 export SSCHED_UBER=y
@@ -16,7 +17,8 @@ if [ -z "$CMD" ] ; then
 fi
 
 # load the library routines
-. $PRE/lib/snapsched/snapsched-funcs
+# . $PRE/lib/snapsched/snapsched-funcs
+. $PRE/snapsched-funcs
 
 init_config_help()
 {
@@ -182,19 +184,47 @@ set_monthlies_help()
                    fire the snapshot on the day in question.  default: 22:00"
 }
 
+mod_maxsnapcount_help()
+{
+	echo "mod_maxsnapcount :  change the max snap count for a particular source filesystem"
+	echo "                    and snapshot interval."
+	echo "                    args: <fs> <interval> <new max>"
+	echo "                    fs is the file system subvolume to be snapped, as"
+	echo "                    already configured."
+	echo "                    interval is the specific snap interval of fs to change,"
+	echo "                    one of hourly, daily, weekly or monthly.  can be abbreviated
+                    to single letter or non-pluralized word (day).
+                    new-max is the new max snapcount for this fs/interval pair."
+}
+
 diff_help()
 {
-	echo "diff          :  diff a file against version in a scheduled snapshot"
-	echo "                 args: <snap-src> <int-type> <file-name> [<back-num>]"
+	echo "diff    :  diff a file against version in a scheduled snapshot"
+	echo "           args: <snap-src> <int-type> <file-name> [<back-num>]"
 	echo "                 <snap-src> - the name of the source fileset"
 	echo "                 <int-type> - h[ourly],d[ayly],w[eekly],m[onthly]"
 	echo "                 <file-name> - name of file.  relative from PWD for now"
-	echo "                 env variable SSCHED_DIFF can contain custom diff"
 	echo "                 <back-num> - number of snaps to go back. default=1"
 	echo "                              max is dependent on config and int-type"
+	echo "           env variable SSCHED_DIFF can contain custom diff"
+}
 
-	echo "get           :  same as diff, but instead copy the file from the"
-	echo "                 snapshot onto the existing file. DANGEROUS!"
+get_help()
+{
+	echo "get     :  get a file from a scheduled snapshot - must have sudo access"
+	echo "           args: <snap-src> <int-type> <file-name> <out-filename> [<back-num>]"
+	echo "                 <snap-src> - the name of the source fileset"
+	echo "                 <int-type> - h[ourly],d[ayly],w[eekly],m[onthly]"
+	echo "                 <file-name> - name of file.  relative from PWD for now"
+	echo "                 <out-filename> - name of output file. will overwrite"
+	echo "                                  existing files.  can use - to specify"
+	echo "                                  sending file to stdout"
+	echo "                 <back-num> - number of snaps to go back. default=1"
+	echo "                              max is dependent on config and int-type"
+	echo "           env variable SSCHED_CP can contain custom cp command. args are"
+	echo "           full pathname strings of input-file and output-file. output-file"
+	echo "           will be null string if '-' was specified.  default cmd is"
+	echo "           'cp --reflink-auto'"
 }
 
 if [ \( "$CMD" = "--list-funcs" \) -o \
@@ -227,7 +257,11 @@ if [ \( "$CMD" = "--list-funcs" \) -o \
 	echo
 	set_monthlies_help
 	echo
+	mod_maxsnapcount_help
+	echo
 	diff_help
+	echo
+	get_help
 
 	echo
 
