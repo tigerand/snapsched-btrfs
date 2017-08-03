@@ -1,7 +1,7 @@
-* create package /etc/cron.d file to get away from anacron and
-  cron.{hour,dai,week,month}ly files and set times.  then add ability to
-  set the times and days for hourly, daily, weekly, and monthly.
-   DONE
+* integrated backup capability:
+	+ backup server
+	+ directory on server
+	+ transfer method
 
 * snapshot log, displayable from snapsched command
 
@@ -22,5 +22,11 @@
 * a command to delete a file from scheduled snapshots, by specific interval,
   or all snapshots in that interval type, or in all scheduled snapshots.
 
-* a command to list a file in scheduled snapshots, by specific interval,
-  or all snapshots in that interval type, or in all scheduled snapshots.
+* DONE (i think) - a command to list a file in scheduled snapshots, by
+  specific interval, or all snapshots in that interval type, or in all
+  scheduled snapshots.
+
+* DONE - create package /etc/cron.d file to get away from anacron and
+  cron.{hour,dai,week,month}ly files and set times.  then add ability to
+  set the times and days for hourly, daily, weekly, and monthly.
+
