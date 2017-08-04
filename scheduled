@@ -127,8 +127,7 @@ if [ `echo ${TBASE}/* | wc -w` -ge "$MAX_SCNT" ] ; then
 	omsg "Deleting:"
 	omsg -e "\tReached max snap count ($MAX_SCNT) for '$NSRC' '$FREQ', hence"
 
-	MTMP=$TMPBASE/msc.snap.del.$NSRC.$FREQ.$OLDSNAP
-	_ssched_mktemp $MTMP
+	MTMP=`_ssched_mktemp msc.snap.del.$NSRC.$FREQ.$OLDSNAP`
 
 	#echo "btrfs sub del -c $TBASE/$OLDSNAP" | sed 's/^/\t/' > $MTMP
 	btrfs sub del -c "$TBASE/$OLDSNAP" 2>&1 | sed 's/^/\t/' > $MTMP
@@ -138,13 +137,13 @@ if [ `echo ${TBASE}/* | wc -w` -ge "$MAX_SCNT" ] ; then
 		serr -e "\tFAILure deleting the oldest snapshot '$TBASE/$OLDSNAP': $ES"
 		serr < $MTMP
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
-		_ssched_rmtemp $MTMP
+		_ssched_rmtemp msc.snap.del.$NSRC.$FREQ.$OLDSNAP
 		exit $ES
 	fi
 	omsg < $MTMP
 	# output a blank line for formatting
 	omsg ""
-	_ssched_rmtemp $MTMP
+	_ssched_rmtemp msc.snap.del.$NSRC.$FREQ.$OLDSNAP
 fi
 
 # snap it
@@ -154,8 +153,7 @@ omsg "Snapping: '${SSRC#${CONFIG[SNAP_MOUNT_DIR]}/}' -> '$FREQ/$SNAME'"
 _ssched_pause_dbs $NSRC
 PES=$?
 
-MTMP=$TMPBASE/sub.snap.$NSRC.$FREQ.$SNAME
-_ssched_mktemp `basename $MTMP`
+MTMP=`_ssched_mktemp sub.snap.$NSRC.$FREQ.$SNAME`
 
 #echo -e "\tbtrfs sub snap -r '$SSRC' '$TDIR'"
 # echo "btrfs sub snap -r $SSRC $TDIR" | sed 's/^/\t/' >$MTMP
@@ -175,7 +173,7 @@ else
 	omsg <$MTMP
 fi
 
-_ssched_rmtemp $MTMP
+_ssched_rmtemp sub.snap.$NSRC.$FREQ.$SNAME
 
 _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 

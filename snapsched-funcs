@@ -48,14 +48,25 @@ serr()
 }
 
 
+# create the TEMPBASE temp directory
+_ssched_mktmpdir()
+{
+	if [ ! -d $TMPBASE ] ; then
+		mkdir -p $TMPBASE
+	fi
+	echo $TMPBASE
+}
+
+
 # create a temp file of name $1 in $TMPBASE
 _ssched_mktemp()
 {
 	local TMPFILE=`basename $1`
-	if [ ! -d $TMPBASE ] ; then
-		mkdir -p $TMPBASE
-	fi
-	touch $TMPBASE/$TMPFILE
+	local TMPDIR
+
+	TMPDIR=`_ssched_mktmpdir`
+	touch $TMPDIR/$TMPFILE
+	echo $TMPDIR/$TMPFILE
 }
 
 
@@ -63,18 +74,20 @@ _ssched_mktemp()
 _ssched_rmtemp()
 {
 	local TMPFILE=`basename $1`
+
 	rm -f $TMPBASE/$TMPFILE >/dev/null 2>&1
-	if [ -d $TMPBASE ] ; then
+	# if [ -d $TMPBASE ] ; then
 		# this next part is super racy.  i hope there isn't a hundred
 		# ssched jobs running on the same machine one day
-		rmdir $TMPBASE >/dev/null 2>&1
-	fi
+		# leave it
+		#rmdir $TMPBASE >/dev/null 2>&1
+	# fi
 }
 
 
 # translate interval to single uppercase letter
 # arg: {hourly,daily,weekly,monthly}
-_ssched_int2l()
+_ssched_int2u()
 {
 	local -u I=${1:0:1}
 	echo $I
@@ -406,7 +419,7 @@ ssched_create_cronjobs()
 		JOB=${JOB}ly
 
 		# if max snap count is 0, then snaps at that interval are disabled
-		if [ ${CONFIG["SSRC_${NSRC}%`_ssched_int2l $JOB`_MSC"]} -eq 0 ] ; then
+		if [ ${CONFIG["SSRC_${NSRC}%`_ssched_int2u $JOB`_MSC"]} -eq 0 ] ; then
 			continue
 		fi
 
@@ -842,7 +855,7 @@ ssched_mod_maxsnapcount()
 			;;
 	esac
 
-	INTRVAL=`_ssched_int2l $INT`
+	INTRVAL=`_ssched_int2u $INT`
 	PLURAL=${INT%y}ies
 	OMAX=${CONFIG[SSRC_${NSRC}%${INTRVAL}_MSC]}
 
@@ -1452,7 +1465,7 @@ ssched_remove_source()
 	unset CONFIG["SSRC_${NSRC}%DBS"]
 	for I in hour dai week month ; do
 		I=${I}ly
-		R=`_ssched_int2l $I`
+		R=`_ssched_int2u $I`
 		if [ "${CONFIG[SSRC_$NSRC%${R}_DAT]}" ] ; then
 			unset CONFIG[SSRC_$NSRC%${R}_DAT]
 			unset CONFIG[SSRC_$NSRC%${R}_TOD]
@@ -1684,13 +1697,119 @@ ssched_get()
 		fi
 	fi
 
-# FIXME # resulting file has wrong ownership/permissions
-	# whatever errors cp gets about no files, etc,
-	#  just poop 'em on to the user
+	# whatever errors cp gets about no files, etc, just poop 'em on to the user
 	${SSCHED_GET:-$CP_CMD} $CPARGS "$SDIR/$FPATH" "${ONAM:+"$ONAM"}"
 	ES=$?
 
 	$SUDOCMD _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
 	return $ES
+}
+
+
+#command
+ssched_set_backup()
+{
+	local NSRC BHOST BFSNAME
+	local -l INTTYPE
+	local USTR="usage: set_backup <source-name> <backup-host-name> <fs-name> [<int-type>]"
+
+	if [ "$#" -lt 3 ] ; then
+		serr "wrong number of arguments: $#"
+		echo "$USTR"
+		return 1
+	fi
+
+	NSRC="$1"
+	BHOST="$2"
+	BFSNAME="$3"
+	shift;shift;shift
+	if [ "$#" -eq 1 ] ; then
+		INTTYPE="$1"
+	fi
+
+	# validate NSRC, and read config file if necessary
+	_ssched_validate_nsrc NSRC "$USTR" ||
+		return 1
+
+	# validate int type
+	case "$INTTYPE" in
+		h|hour*)
+			INTR=hourly
+			;;
+		d|day*|daily|dailies)
+			INTR=daily
+			;;
+		w|week*)
+			INTR=weekly
+			;;
+		m|month*)
+			INTR=monthly
+			;;
+		*)
+			serr -e "$USTR"
+			serr "Bad interval value: '$INTTYPE'"
+			return 1
+			;;
+	esac
+
+	INTSTR="monthly weekly daily hourly"
+
+	CONFIG["SSRC_${NSRC}%BACKUPHOST"]=$BHOST
+	CONFIG["SSRC_${NSRC}%BACKUPFS"]=$BFSNAME
+	CONFIG["SSRC_${NSRC}%BACKUPINT"]=`_ssche_int2u $INTR`
+
+	# right now backups
+	case "$INTR" in
+		hourly)
+			RNBCKUPS="$INTSTR"
+			;;
+		d|day*|daily|dailies)
+			RNBCKUPS="${INTSTR% *}"
+			;;
+		w|week*)
+			RNBCKUPS="${INTSTR% *}"
+			RNBCKUPS="${RNBCKUPS% *}"
+			;;
+		m|month*)
+			RNBCKUPS="${INTSTR% *}"
+			RNBCKUPS="${RNBCKUPS% *}"
+			RNBCKUPS="${RNBCKUPS% *}"
+			;;
+	esac
+
+	echo "Backups will be bootstrapped by sending all unsent snapshots to"
+	echo "the backup host '$BHOST' ... RIGHT NOW!  Be aware that this could"
+	echo "consume system and network resources for quite a while."
+	echo "If this is OK, then type 'yes', otherwise you will have to run this"
+	echo "command again later.  The job will kick off 5 minutes after this"
+	echo "command exits.  You can always use the at(1) command to reschedule"
+	echo "the job to another time, if you so desire."
+	read "Do you wish to continue? [no] "
+	if [ "$REPLY" != yes ] ; then
+		return 1
+	fi
+
+	# save the config entries
+	_ssched_write_config
+
+	# schedule the backup bootstrap process
+	(echo cd /tmp/ssched
+		for I in $RNBCKUPS ; do
+			echo $PRE/lib/snapsched/snapback $NSRC $I $BHOST
+			echo sleep 5
+		done) | at -q s "now + 5 minutes"
+	
+#	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
+
+	#SDIR="${CONFIG[SNAP_MOUNT_DIR]}/${CONFIG[SNAP_BASE_DIR]}/$NSRC/`_ssched_int2dir $INTR`"
+	# SDIR="$SDIR/`\ls $SDIR | tail -$BN | head -1`"
+
+#	if ! ping -c 1 >/dev/null 2>&1 ; then
+#		serr "Backup host '$BHOST' is not up?"
+#		return 1
+#	fi
+
+
+#	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 }

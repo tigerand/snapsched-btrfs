@@ -2,7 +2,7 @@
 PROJ_NAME=snapsched
 
 PROGS=snapsched
-LIBS=scheduled snapsched-funcs
+LIBS=scheduled snapback snapsched-funcs
 COMP=ssched.comp
 
 PREFIX=/usr/local
@@ -26,6 +26,8 @@ $(INSTALLED_COMP): $(COMP)
 	install -o root -g sys -p $? $(INSTALLED_COMP)
 
 $(PREFIX)/$(INSTALL_LIB)/scheduled: scheduled
+	install -D -o root -g sys -p $(@F) $@
+$(PREFIX)/$(INSTALL_LIB)/snapback: snapback
 	install -D -o root -g sys -p $(@F) $@
 $(PREFIX)/$(INSTALL_LIB)/snapsched-funcs: snapsched-funcs
 	install -D -o root -g sys -p $(@F) $@
