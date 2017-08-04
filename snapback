@@ -7,6 +7,7 @@ export PRE=/usr/local
 
 exec 2>&1
 
+export OSILENT=
 
 # load the library routines
 . $PRE/lib/snapsched/snapsched-funcs
@@ -30,6 +31,11 @@ shift
 _ssched_validate_nsrc SSRC "" ||
 	exit 1
 
+if [ "${CONFIG[SSRC_$NSRC%`_ssched_int2u $FREQ`_MSC]}" -eq 0 ] ; then
+	# there's nothing to backup
+	exit 0
+fi
+
 SSRC=${CONFIG[SNAP_MOUNT_DIR]}/$SSRC
 BFSNAME=${CONFIG["SSRC_${NSRC}%BACKUPFS"]}
 
@@ -45,34 +51,6 @@ fi
 
 omsg "$freq backup job for '$NSRC' at `date '+%F %T'`"
 
-case $FREQ in
-	hourly)
-		L=H
-		DATESTR=`date +%Y-%m-%d`
-		INTSTR=`date +%H`
-		;;
-	daily)
-		L=D
-		DATESTR=`date +%Y-%m`
-		INTSTR=`date +%d`
-		;;
-	weekly)
-		L=W
-		DATESTR=`date +%Y-%m`
-		INTSTR=`date +%W`
-		;;
-	monthly)
-		L=M
-		DATESTR=`date +%Y`
-		INTSTR=`date +%m`
-		;;
-	*)
-		serr "$0: invalid freq argument '$FREQ'."
-		exit 1
-		;;
-esac
-
-TBASE="${CONFIG["SNAP_MOUNT_DIR"]}/${CONFIG["SNAP_BASE_DIR"]}/$NSRC/`_ssched_int2dir $FREQ`"
 
 _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
 	ES=$?
@@ -85,7 +63,9 @@ _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
 	exit 1
 }
 
-BSDIR=/$BFSNAME/`hostname`/$NSRC/$FREQ
+TBASE="${CONFIG["SNAP_MOUNT_DIR"]}/${CONFIG["SNAP_BASE_DIR"]}/$NSRC/`_ssched_int2dir $FREQ`"
+
+BSDIR=$BFSNAME/`hostname`/$NSRC/$FREQ
 
 # make directories on bhost
 ssh $BHOST mkdir -p /$BSDIR 2>/dev/null
@@ -127,12 +107,15 @@ done
 # send the snaps
 for ((S = 0; S < X; S+=2)) ; do
 	LS=$TBASE/${SNAP_XFER_LST[S]}
-	echo "btrfs send ${SNAP_XFER_LST[S]:+ -p $LS} $TBASE/${SNAP_XFER_LST[S+1]} | ssh $BHOST btrfs receive $BSDIR/${SNAP_XFER_LST[S+1]}"
+	echo "command:"
+	echo "btrfs send ${SNAP_XFER_LST[S]:+ -p $LS} $TBASE/${SNAP_XFER_LST[S+1]} |"
+	echo "    ssh $BHOST btrfs receive $BSDIR/"
+	echo
 	btrfs send ${SNAP_XFER_LST[S]:+ -p $LS} $TBASE/${SNAP_XFER_LST[S+1]} |
-		ssh $BHOST btrfs receive $BSDIR/${SNAP_XFER_LST[S+1]}
+		ssh $BHOST btrfs receive $BSDIR/
 	ES=$?
+	echo
 done
-
 
 
 _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}

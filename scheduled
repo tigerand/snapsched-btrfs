@@ -7,6 +7,8 @@ exec 2>&1
 
 # create the scheduled snapshots.  called by cron.
 
+export OSILENT=
+
 # load the library routines
 . $PRE/lib/snapsched/snapsched-funcs
 
