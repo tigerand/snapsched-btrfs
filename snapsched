@@ -185,29 +185,33 @@ set_monthlies_help()
 set_backup_help()
 {
 	echo "set_backup :  Setup and initiate the backup feature for a src/interval"
-	echo "              Args: <fs> <backup-host> <bfs-dir> <interval>"
+	echo "              Args: <fs> <bfs-dir> <interval> <backup-host> [<compress>]"
 	echo "              fs is the file system subvolume parent of the snapshots"
-	echo "              to be backed up, as already configured."
-	echo "              backup-host is the hostname/IP-addr of the host that"
-	echo "              will receive the snapshot."
+	echo "                to be backed up, as already configured."
 	echo "              bfs-dir is the directory on the backup host of the btrfs"
-	echo "              file system that will receive the backup snapshot."
+	echo "                file system that will receive the backup snapshot."
 	echo "              interval is the interval level that will be backed up - all"
-	echo "              interval levels above this one will be backed up."
-	echo "              That means that if you specify 'daily' as the interval,
-              any interval levels you are snapping for the source fs
-              that are larger (above) daily will be backed up as well.
-              So, if you have weekly and daily snapshots being taken, all
-              weekly and daily snaps will be backed up.  It is up to the
-              user to delete snap shots off the backup server when they
-              are no longer needed.  A bootstrap process is scheduled for
-              5 minutes after this command is run to send all un-backed
-              up snapshots to the backup server.  Use the at(1) command
-              to modify the scheduling of that command, but be aware that
-              cron will kick off a backup the next time a snapshot of
-              <interval> is performed.  The root user will get an email
-              with the results of the bootstrap and cron backup efforts,
-              except for hourly snapshots unless there is an error."
+	echo "                interval levels above this one will be backed up."
+	echo "              backup-host is the hostname/IP-addr of the host that"
+	echo "                will receive the snapshot."
+	echo "              compression ([off],on) specifies using compression arg"
+	echo "                with ssh when doing the xfer.  Compression is generally"
+	echo "                much slower on fast (> 100Base-T) connections."
+	echo "              If you specify 'daily' as the interval, any interval levels
+              you are snapping for the source fs that are larger (above)
+              daily will be backed up as well.  So, if you have weekly and
+              daily snapshots scheduled, all weekly and daily snaps will
+              be backed up.  It is up to the user to delete snapshots
+              on the backup server when they are no longer needed.
+              A bootstrap process is scheduled for 5 minutes after
+              this command is run to send all un-backed up snapshots to
+              the backup server.  Use the at(1) command to modify the
+              scheduling of that command, but be aware that cron will
+              kick off a backup the next time a snapshot of <interval>
+              is performed.  The root user will get an email with the
+              results of the bootstrap and cron backup efforts, except
+              for hourly snapshots unless there is an error."
+
 }
 
 rm_backup_help()
