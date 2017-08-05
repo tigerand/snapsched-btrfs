@@ -123,7 +123,7 @@ else
 fi
 
 # make directories on bhost
-ssh -x $SSHZ_ARG $BHOST1 mkdir -p /$BSDIR 2>/dev/null
+ssh -x $BHOST1 mkdir -p /$BSDIR 2>/dev/null
 
 declare -i SX RX
 declare -a SSNAPS RSNAPS
@@ -170,16 +170,16 @@ for SSSTR in "${SSNAPS[@]}" ; do
 		if [ "$RUID" = "$SUID" ] ; then
 			continue 2
 		fi
-		SNAP_XFER_LST+=(${SSSTR#* })
 	done
+	SNAP_XFER_LST+=(${SSSTR#* })
 done
 
 # send the snaps
 for SNAP in "${SNAP_XFER_LST[@]}" ; do
 	D=`egrep -o "hourly|daily|weekly|monthly" <<<"$SNAP"`
-	ssh -x $BHOST mkdir -p $BSDIR/$D
-	cp_snap "" "ssh -x $BHOST" "$SNAP" "$BSDIR/$D" &&
-		SNAP_SENT_LST+=("$SVOL")
+	ssh -x $BHOST1 mkdir -p $BSDIR/$D
+	cp_snap "" "ssh -x $SSHZ_ARG $BHOST1" "$SNAP" "$BSDIR/$D" &&
+		SNAP_SENT_LST+=("$SNAP")
 done
 
 
