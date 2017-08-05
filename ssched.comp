@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-# list_sources lssnap print_config set_btrfspath mod_maxsnapcount set_dailies set_weeklies set_monthlies add_source remove_source diff
+# list_sources lssnap print_config set_btrfspath mod_maxsnapcount set_dailies set_weeklies set_monthlies add_source remove_source diff get set_backup rm_backup
 
 
 _ssched_comp()
@@ -13,7 +13,7 @@ _ssched_comp()
 	# the second argument is the word being completed
 	# the third argument is the word preceding the word being completed
 
-#echo "$1 $2 $3 biteme" >/dev/stderr
+# echo "$1 $2 $3 debug" >/dev/stderr
 
 	function list_srcs()
 	{
@@ -23,7 +23,7 @@ _ssched_comp()
 		. /etc/snapsched/config
 		S=`for X in ${!CONFIG[*]} ; do
 			expr $X \: SSRC_ >/dev/null || continue
-			grep -qs '%' <<<$X && continue
+			grep -qs '%' <<<"$X" && continue
 			echo ${X#SSRC_}
 			done`
 		if [ "$1" ] ; then
@@ -57,7 +57,7 @@ _ssched_comp()
 		# figure out what the next argument should be based on the command
 		case "$3" in
 			set_dailies|set_weeklies|set_monthlies|set_hourlies) ;&
-			mod_maxsnapcount|remove_source|diff|get)
+			mod_maxsnapcount|remove_source|diff|get|set_backup|rm_backup)
 				COMPREPLY=(`list_srcs $2`)
 				;;
 			print_config)
