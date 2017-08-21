@@ -3,6 +3,16 @@
 
 export PRE=/usr/local
 
+declare -A CONFIG
+export CONFIG
+ETC=/etc
+export ETCDIR=$ETC/snapsched
+export CFGFILE=$ETCDIR/config
+export INTCRONFILE_BASE=snapsched
+export CRONTAB=$ETC/cron.d/$INTCRONFILE_BASE
+export CRONPROG=$PRE/lib/snapsched/scheduled
+export TMPBASE=/tmp/ssched
+
 exec 2>&1
 
 # create the scheduled snapshots.  called by cron.
@@ -68,7 +78,7 @@ case $FREQ in
 		INTSTR=`date +%m`
 		;;
 	*)
-		serr "$0: invalid freq argument '$FREQ'."
+		omsg "$0: invalid freq argument '$FREQ'."
 		exit 1
 		;;
 esac
@@ -86,11 +96,11 @@ TDIR="${TBASE}/$SNAME"
 
 _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
 	ES=$?
-	serr "Unable to mount root volume '${CONFIG[SNAP_MOUNT_DIR]}': $ES"
+	omsg "Unable to mount root volume '${CONFIG[SNAP_MOUNT_DIR]}': $ES"
 	if [ ! -d "${CONFIG[SNAP_MOUNT_DIR]}" ] ; then
-		serr "Directory  '${CONFIG[SNAP_MOUNT_DIR]}' does not exist."
+		omsg "Directory  '${CONFIG[SNAP_MOUNT_DIR]}' does not exist."
 	elif [ "$ES" -eq 4 ] ; then
-		serr "Perhaps it needs to be configured in /etc/fstab?  Snapsched requires that."
+		omsg "Perhaps it needs to be configured in /etc/fstab?  Snapsched requires that."
 	fi
 	exit 1
 }
@@ -99,18 +109,18 @@ _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
 
 if [ ! -d "$TBASE" ] ; then
 	mkdir -p "$TBASE" || {
-		serr "Failed to create the snapsched storage directory ${TBASE}: $?"
-		serr "Cannot create snapshot '$FREQ/$SNAME'."
+		omsg "Failed to create the snapsched storage directory ${TBASE}: $?"
+		omsg "Cannot create snapshot '$FREQ/$SNAME'."
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 		exit 1
 	}
 fi
 
 if [ -d "$TDIR" ] ; then
-	serr -e "\tFAIL: Snapshot target directory '$TDIR' already exists!"
+	omsg -e "\tFAIL: Snapshot target directory '$TDIR' already exists!"
 	cd $TBASE
-	serr -e "\t`ls -ld $SNAME`"
-	serr "Cannot create snapshot '$FREQ/$SNAME'."
+	omsg -e "\t`ls -ld $SNAME`"
+	omsg "Cannot create snapshot '$FREQ/$SNAME'."
 	exit 1
 fi
 
@@ -136,8 +146,8 @@ if [ `echo ${TBASE}/* | wc -w` -ge "$MAX_SCNT" ] ; then
 
 	ES=${PIPESTATUS[0]}
 	if [ "$ES" -ne 0 ] ; then
-		serr -e "\tFAILure deleting the oldest snapshot '$TBASE/$OLDSNAP': $ES"
-		serr < $MTMP
+		omsg -e "\tFAILure deleting the oldest snapshot '$TBASE/$OLDSNAP': $ES"
+		omsg < $MTMP
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 		_ssched_rmtemp msc.snap.del.$NSRC.$FREQ.$OLDSNAP
 		exit $ES
@@ -157,8 +167,6 @@ PES=$?
 
 MTMP=`_ssched_mktemp sub.snap.$NSRC.$FREQ.$SNAME`
 
-#echo -e "\tbtrfs sub snap -r '$SSRC' '$TDIR'"
-# echo "btrfs sub snap -r $SSRC $TDIR" | sed 's/^/\t/' >$MTMP
 btrfs sub snap -r "$SSRC" "$TDIR" 2>&1 | sed 's/^/\t/' >$MTMP
 
 ES=${PIPESTATUS[0]}
@@ -169,14 +177,28 @@ ES=${PIPESTATUS[0]}
 # fi
 
 if [ "$ES" -ne 0 ] ; then
-	serr "Some sort of failure creating snapshot '$FREQ/${DATESTR}_${INTSTR}'"
-	serr <$MTMP
-else
-	omsg <$MTMP
+	omsg "Some sort of failure creating snapshot '$FREQ/${DATESTR}_${INTSTR}'"
 fi
+omsg <$MTMP
 
 _ssched_rmtemp sub.snap.$NSRC.$FREQ.$SNAME
 
 _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+
+# do backups if this filesystem is configed for backup for at least this int
+
+BINT="${CONFIG[SSRC_$NSRC%BACKUPINT]}"
+
+if [ \( "$ES" -eq 0 \) -a "$BINT" ] ; then
+	# bail here if this interval is less than the min backup interval
+	if grep -qs "$FREQ" <<<"${LESSER_INTS[$BINT]}" ; then
+		# don't fire backups on this interval
+		exit $ES
+	fi
+	omsg -e "\n"
+	omsg -n "Backup job for ${NSRC}: "
+	echo "$PRE/lib/snapsched/snapback $NSRC" |
+		at "now + 5 minutes" 2>&1 | grep -v /bin/sh
+fi
 
 exit $ES
