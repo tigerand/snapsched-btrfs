@@ -149,13 +149,13 @@ if [ `echo ${TBASE}/* | wc -w` -ge "$MAX_SCNT" ] ; then
 		omsg -e "\tFAILure deleting the oldest snapshot '$TBASE/$OLDSNAP': $ES"
 		omsg < $MTMP
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
-		_ssched_rmtemp msc.snap.del.$NSRC.$FREQ.$OLDSNAP
+		_ssched_rmtemp $MTMP
 		exit $ES
 	fi
 	omsg < $MTMP
 	# output a blank line for formatting
 	omsg ""
-	_ssched_rmtemp msc.snap.del.$NSRC.$FREQ.$OLDSNAP
+	_ssched_rmtemp $MTMP
 fi
 
 # snap it
@@ -181,7 +181,7 @@ if [ "$ES" -ne 0 ] ; then
 fi
 omsg <$MTMP
 
-_ssched_rmtemp sub.snap.$NSRC.$FREQ.$SNAME
+_ssched_rmtemp $MTMP
 
 _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
