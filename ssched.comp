@@ -56,7 +56,7 @@ _ssched_comp()
 	elif grep -qw "$3" <<<"$CMD_LST" ; then
 		# figure out what the next argument should be based on the command
 		case "$3" in
-			set_dailies|set_weeklies|set_monthlies|set_hourlies) ;&
+			set_dailies|set_weeklies|set_monthlies|set_hourlies|lssnap) ;&
 			mod_maxsnapcount|remove_source|diff|get|set_backup|rm_backup)
 				COMPREPLY=(`list_srcs $2`)
 				;;
@@ -65,9 +65,6 @@ _ssched_comp()
 				;;
 			list_sources)
 				COMPREPLY=("" "-l" "-d")
-				;;
-			lssnap)
-				COMPREPLY=(`list_srcs $2`)
 				;;
 			set_btrfspath)
 				;;
