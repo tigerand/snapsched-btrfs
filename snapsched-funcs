@@ -1,12 +1,5 @@
 #!/bin/bash
 
-declare -A CONFIG
-export CONFIG
-ETC=/etc
-export ETCDIR=$ETC/snapsched
-export CFGFILE=$ETCDIR/config
-export CRONTAB=$ETC/cron.d/snapsched
-export TMPBASE=/tmp/ssched
 export UMNT
 
 # max allowed configurable snap count by interval type. completely arbitrary.
@@ -15,6 +8,7 @@ IMAXSNAPS[hourly]=36
 IMAXSNAPS[daily]=14
 IMAXSNAPS[weekly]=10
 IMAXSNAPS[monthly]=24
+# ${!IMAXSNAPS[*]} is the official list of scheduled snapshot intervals
 
 # interval values that are "lesser" than the index interval
 declare -A LESSER_INTS
@@ -58,6 +52,99 @@ serr()
 		cat >/dev/stderr
 	fi
 }
+
+
+# insert a string into a sorted array of strings
+# called with first arg "-u" then don't add string if it's already in there
+_sort_a()
+{
+	local -n STRS
+	local -i I N
+	local S
+	local T
+	local UNIQ=false
+	local OP
+
+	OP="$1"
+	shift
+
+	if [ "$1" = "-u" ] ; then
+		UNIQ=true
+		shift
+	fi
+
+	STRS="$1"
+	S="$2"
+
+	# three quick optimizations
+	if [ -z "$S" ] ; then
+		return
+	fi
+	if [ "${#STRS[*]}" -eq 0 ] ; then
+		STRS[0]="$S"
+		return
+	fi
+	if [ "$S" "$OP" "${STRS[-1]}" ] ; then
+		STRS+=($S)
+		return
+	fi
+
+	for ((I = 0; ; I++)) ; do
+		if [ "$S" "$OP" "${STRS[$I]}" ] ; then
+			continue
+		fi
+		# then S is less/greater-than or equal-to lexigraphically
+		if $UNIQ ; then
+			if [ "$S" = "${STRS[I]}" ] ; then
+				return
+			fi
+		fi
+		for ((N = I; ; N++)) ; do
+			T="${STRS[N]}"
+			STRS[N]="$S"
+			if [ -z "$T" ] ; then
+				break
+			fi
+			S="$T"
+		done
+		break
+	done
+}
+
+
+_sort()
+{
+	_sort_g "$@"
+}
+
+
+_sort_g()
+{
+	_sort_a '>' "$@"
+}
+
+
+_sort_l()
+{
+	_sort_a '<' "$@"
+}
+
+
+# make one array the same as another
+# $1 is the destination array
+# $2 is the source array
+#__a_assignment()
+#{
+#	local -n DARR=$1 SARR=$2
+#	local I
+#
+#	for I in "${!DARR[@]}" ; do
+#		unset DARR[$I]
+#	done
+#	for I in "${!SARR[@]}" ; do
+#		DARR[$I]=${SARR[$I]}
+#	done
+#}
 
 
 # create the TEMPBASE temp directory
@@ -181,6 +268,8 @@ _ssched_read_config()
 	fi
 }
 
+
+if $OLDBASH ; then
 _ssched_output_config()
 {
 	local X
@@ -188,6 +277,45 @@ _ssched_output_config()
 		echo "CONFIG[$X]=\"${CONFIG[$X]}\""
 	done
 }
+else
+
+_ssched_output_config()
+{
+	local S X
+	local -a XES
+	local TOPX="SNAP_MOUNT_DIR SNAP_BASE_DIR SNAP_HOURLY_DIR SNAP_DAILY_DIR SNAP_WEEKLY_DIR SNAP_MONTHLY_DIR"
+
+	for X in $TOPX ; do
+		echo "CONFIG[$X]=\"${CONFIG[$X]}\""
+	done
+	for S in `_ssched_list_cfg_srcs` ; do
+		echo "CONFIG[SSRC_$S]=\"${CONFIG[SSRC_$S]}\""
+		for X in "${!CONFIG[@]}" ; do
+			if expr match "$X" "SSRC_$S%" >/dev/null ; then
+				_sort_l XES "$X"
+			fi
+		done
+		for X in ${XES[*]} ; do
+			echo "CONFIG[$X]=\"${CONFIG[$X]}\""
+		done
+		unset XES
+	done
+
+	# currently there are no more config variables, but let's just
+	# make things a little robust against future changes
+	for X in "${!CONFIG[@]}" ; do
+		if expr match "$X" "SSRC_" >/dev/null ; then
+			continue
+		fi
+		for S in $TOPX ; do
+			if [ "$X" = "$S" ] ; then
+				continue 2
+			fi
+		done
+		echo "CONFIG[$X]=\"${CONFIG[$X]}\""
+	done
+}
+fi
 
 _ssched_write_config()
 {
@@ -199,23 +327,28 @@ _ssched_write_config()
 }
 
 # give us a list of snapshot sources from the config
-_ssched_list_srcs()
+_ssched_list_cfg_srcs()
 {
-	echo ${!CONFIG[*]} | grep -o 'SSRC_[^ ]*' | grep -v \% | sed 's/^SSRC_//'
+	local C
+	local -a SRCS_LIST
+
+	for C in "${!CONFIG[@]}" ; do
+		if [ "$C" = "${C#SSRC_}" ] ; then
+			continue
+		fi
+		if [ "$C" = "${C%\%*}" ] ; then
+			_sort SRCS_LIST "${C#SSRC_}"
+		fi
+	done
+	echo ${SRCS_LIST[*]}
 
 # alternate method.  which is better?
-#	for I in "${!CONFIG[@]}" ; do
-#		if [ "$I" = "${I#SSRC_}" ; then
-#			continue
-#		fi
-#		if ! expr index "$I" '%' >/dev/null; then
-#			SRCS_LIST+=" ${I#SSRC_}"
-#		fi
-#	done
-#	echo $SRCS_LIST
+#	echo ${!CONFIG[*]} | grep -o 'SSRC_[^ ]*' | grep -v \% | sed 's/^SSRC_//'
 }
 
 # mount the btrfs subvolid=0 filesystem
+# FIXME if we do, or if we don't, we need some way to hold the mount, so
+# that some dorkwad doesn't come along and umount it while we're doing stuff
 _ssched_mount_rootvol()
 {
 	local BPATH="$1"
@@ -237,8 +370,10 @@ _ssched_umount_rootvol()
 {
 	local BPATH="$1"
 
-	if $UMNT ; then
-		umount "$BPATH"
+	if [ "$BPATH" -a -d "$BPATH" ] ; then
+		if $UMNT ; then
+			umount "$BPATH"
+		fi
 	fi
 }
 
@@ -248,7 +383,7 @@ _ssched_remove_cron()
 {
 	local NSRC=$1
 	local INT=$2
-	local CRND=$ETC/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
+	local CRND=$ETC/cron.$INT/${INTCRONFILE_BASE}_`_ssched_nsrc2cronfile "$NSRC"`
 
 	rm -f "$CRND"
 }
@@ -306,7 +441,7 @@ ssched_list_sources()
 
 	_ssched_read_config
 
-	SRCS=`_ssched_list_srcs`
+	SRCS=`_ssched_list_cfg_srcs`
 
 	if [ "$1" = -l ] ; then
 		echo -e "\t     Max Max Max Max Hourly  Daily          Weekly    Monthly"
@@ -346,47 +481,38 @@ ssched_list_sources()
 ssched_lssnap()
 {
 	local NSRC
-	local I S X SRCS_LIST SDIR
+	local I S SRCS_LIST SDIR
+	local -i X
 	local -a INT_LIST
 	local -u IUP
+	local USTR="lssnap [[<fs-source-fs>] <interval-list>]\ninterval list is a comma separated list from h[ourly], d[aily], w[eekly], m[onthly]"
 
+	# optional source name
 	if [ "$#" -ge 1 ] ; then
 		NSRC="$1"
 		_ssched_validate_nsrc NSRC "No source '$NSRC' found." || return 1
 		SRCS_LIST="$NSRC"
 		shift
+
+		# optional optional interval list
+		if [ "$#" -ge 1 ] ; then
+			INT_LIST=(${1//,/ })
+			for X in ${!INT_LIST[*]} ; do
+				S="${INT_LIST[X]}"
+				INT_LIST[X]=`_ssched_nom_int "$S"`
+				if [ -z "${INT_LIST[$X]}" ] ; then
+					serr "$USTR"
+					serr "$0: invalid interval argument: '$S'"
+					serr " interval argument is a [comma separated] list of one"
+					serr " or more of {h[ourly], d[aily], w[eekly], m[onthly]}"
+					return 1
+				fi
+			done
+		fi
 	else
 		_ssched_read_config
-		SRCS_LIST="`_ssched_list_srcs`"
-	fi
-
-	if [ "$#" -ge 1 ] ; then
-		INT_LIST=(${1//,/ })
-		INT_LIST=(${INT_LIST[*]//ies/y})
-		for X in ${!INT_LIST[*]} ; do
-			case ${INT_LIST[$X]} in
-				h|hour|hourly)
-					INT_LIST[$X]=hourly
-					;;
-				d|day|daily)
-					INT_LIST[$X]=daily
-					;;
-				w|week|weekly)
-					INT_LIST[$X]=weekly
-					;;
-				m|month|monthly)
-					INT_LIST[$X]=monthly
-					;;
-				*)
-					serr "$0: invalid interval argument: '${INT_LIST[$X]}'"
-					serr " interval argument is a [comma separated] list of one"
-					serr " or more of {hourly, daily, weekly, monthly}"
-					return 1
-					;;
-			esac
-		done
-	else
-		INT_LIST=(hourly daily weekly monthly)
+		SRCS_LIST="`_ssched_list_cfg_srcs`"
+		INT_LIST=(${!IMAXSNAPS[*]})
 	fi
 
 	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
@@ -398,14 +524,14 @@ ssched_lssnap()
 			# FIXME we need to extract things like the gen, ogen, otime
 			# local ID GEN OGEN barf OD OT P
 			# printf "%7s %7s %7s %10s %8s %s\n" ID GEN OGEN OD OT name
-			# btrfs sub list -st ${CONFIG[SSRC_$S]} | while read ID GEN OGEN barf OD OT P ; do
-			# if [ \( "$ID" = ID \) -o \( "$ID" = '--' \) ] ; then
+			# btrfs sub list -st ${CONFIG[SSRC_$S]} |
+			#	while read ID GEN OGEN barf OD OT P ; do
+			#  if [ \( "$ID" = ID \) -o \( "$ID" = '--' \) ] ; then
 			#	continue
-			# fi
-			# if ! echo $P | grep "${CONFIG[SNAP_BASE_DIR]}/$S/${CONFIG[SNAP_${IRVAL}_DIR]}" >/dev/null ; then
+			#  fi
+			#  grep -q "/$S/${CONFIG[SNAP_${INTVAL}_DIR]}" <<<"$P" ||
 			#	continue
-			# fi
-			# printf "%7s %7s %7s %s %s %s\n" $ID $GEN $OGEN $OD $OT `basename $P`
+			#  printf "%7s %7s %7s %s %s %s\n" $ID $GEN $OGEN $OD $OT ${P##*/}`
 			# done
 			# another option is to use btrfs sub show, which lists snapshots
 			# in their heirarchical order, which turns out to be cool
@@ -430,10 +556,14 @@ ssched_delete_cronjobs()
 
 	if [ -z "$NSRC" ] ; then
 		NSRC='*'
+	elif ! _ssched_validate_nsrc NSRC \
+		"usage: delete_cronjobs [<source-name>]" ; then
+
+		return 1
 	fi
 
-	for I in hour dai week month ; do
-		_ssched_remove_cron "$NSRC" ${I}ly
+	for I in ${!IMAXSNAPS[*]} ; do
+		_ssched_remove_cron "$NSRC" ${I}
 	done
 }
 
@@ -449,9 +579,7 @@ ssched_create_cronjobs()
 		return 1
 	fi
 
-	for JOB in hour dai week month ; do
-
-		JOB=${JOB}ly
+	for JOB in ${!IMAXSNAPS[*]} ; do
 
 		# if max snap count is 0, then snaps at that interval are disabled
 		if [ ${CONFIG["SSRC_${NSRC}%`_ssched_int2u $JOB`_MSC"]} -eq 0 ] ; then
@@ -515,7 +643,7 @@ _ssched_mod_pkgcrontab()
 
 	# FIXME should use the sed 'c' command
 	echo "# $NSRC $2 DARG:'$3'" >> $CFILE
-	echo -e "$4\troot\t$5 $PRE/lib/snapsched/scheduled $NSRC $2" >> $CFILE
+	echo -e "$4\troot\t$5 $CRONPROG $NSRC $2" >> $CFILE
 }
 
 
@@ -539,6 +667,7 @@ ssched_init_config()
 	ssched_delete_cronjobs
 	_ssched_init_pkgcrontab
 }
+
 
 #command
 ssched_print_config()
@@ -705,9 +834,10 @@ _ssched_unpause_dbs()
 # convert the NSRC source name to a file name acceptable by the cron idiots
 _ssched_nsrc2cronfile()
 {
-	local SED_P1="s/@/at/g"
-	local SED_P2="s/\./-/g"
-	echo "$NSRC" | sed -e "$SED_P1" -e "$SED_P2"
+	local SRC
+
+	SRC="${1//@/at}"
+	echo "${SRC//./-}"
 }
 
 
@@ -718,7 +848,7 @@ _ssched_submit_cron()
 
 	local NSRC=$1
 	local INT=$2
-	local CRND=$ETC/cron.$INT/snapsched_`_ssched_nsrc2cronfile "$NSRC"`
+	local CRND=$ETC/cron.$INT/${INTCRONFILE_BASE}_`_ssched_nsrc2cronfile "$NSRC"`
 
 	# work around for stupid cron restriction on file names. of all the stupid.
 
@@ -728,7 +858,7 @@ _ssched_submit_cron()
 #!/bin/sh
 MAILTO=root
 
-$PRE/lib/snapsched/scheduled $NSRC $INT
+$CRONPROG $NSRC $INT
 THERE
 	chmod 755 $CRND
 }
@@ -782,7 +912,7 @@ _ssched_validate_nsrc()
 		# strips off trailing slashes too
 	fi
 	if expr index "$LSRC" '%' >/dev/null ; then
-		serr "Cannot use '%' character in source name"
+		serr "Illegal character '%' in source name"
 		return 1
 	fi
 
@@ -821,6 +951,108 @@ _ssched_valid_min_msc()
 }
 
 
+# validate DAYS parameter for setting days to do daily backups
+_ssched_validate_days()
+{
+	local ARG="$1"
+	local LST
+	local -l I
+
+	if [ "$ARG" != "${ARG#,*}" ] ; then
+		LST="${ARG//,/ }"
+	elif [ "$ARG" != "${ARG#-*}" ] ; then
+		LST="${ARG//-/ }"
+	fi
+	if [ "$LST" ] ; then
+		ARG="$LST"
+	fi
+	for I in $ARG ; do
+		case "$I" in
+			mon|tue|wed|thu|fri|sat|sun)
+				:
+				;;
+			weekdays)
+				:
+				;;
+			[0-9]) # 0 and 1 translate to the same thing in cron.  i think.
+				:
+				;;
+			*)
+				return 1
+				;;
+		esac
+	done
+
+	return 0
+}
+
+
+if $OLDBASH ; then
+
+# create a list of snapshots on [remote] host
+_ssched_bsub_list()
+{
+	local -i S
+	local LINT_EGREP_PAT
+	local SSH_C
+	local BDIR
+	local NSRC
+	local UARG
+	local SLST
+	local SSUBS
+	local INTR
+
+	# arg 1 is the SRC
+	NSRC="$1"
+
+	# arg 2 is optional ssh command
+	SSH_C="$2"
+
+	# arg 3 is the name of the array
+	#SNP=$3 # arg3 is ignored in this oldbash version
+
+	# arg 4 is the btrfs mount point
+	BDIR="$4"
+
+	if [ "$SSH_C" ] ; then
+		UARG=-R
+		GDIR=$(hostname)
+	else
+		UARG=-u
+		GDIR=${CONFIG["SNAP_BASE_DIR"]}
+	fi
+
+	INTR=${CONFIG["SSRC_${NSRC}%BACKUPINT"]}
+	LINT_EGREP_PAT=`tr ' ' '|' <<<"${LESSER_INTS[$INTR]}"`
+
+	# get all the crud from btrfs, minus the interval snaps we aren't backing up
+	SLST=`$SSH_C btrfs sub list --sort=ogen $UARG -o $BDIR |
+		grep "$GDIR/$NSRC/" |
+		egrep -v "$LINT_EGREP_PAT" | tr '\n' '\r'`
+
+	for ((S = 0; ; S++)) ; do
+		SSUB="${SLST%%*}"
+		if [ -z "$SSUB" ] ; then
+			break
+		fi
+		if [ "$SSUB" = "$SLST" ] ; then
+			SLST=
+		else
+			SLST="${SLST#*}"
+		fi
+		# sift out the uuid and the path and put into a string
+		# separated by a space
+		SSUB=${SSUB#*uuid }
+		if [ "$SSH_C" ] ; then
+			RSNAPS[S]="${SSUB%% *} ${SSUB#*path }"
+		else
+			SSNAPS[S]="${SSUB%% *} ${SSUB#*path }"
+		fi
+	done
+}
+
+else
+
 # create a list of snapshots on [remote] host
 _ssched_bsub_list()
 {
@@ -833,6 +1065,7 @@ _ssched_bsub_list()
 	local UARG
 	local SLST
 	local SSUBS
+	local INTR
 
 	# arg 1 is the SRC
 	NSRC="$1"
@@ -848,15 +1081,18 @@ _ssched_bsub_list()
 
 	if [ "$SSH_C" ] ; then
 		UARG=-R
+		GDIR=$(hostname)
 	else
 		UARG=-u
+		GDIR=${CONFIG["SNAP_BASE_DIR"]}
 	fi
-	
-	LINT_EGREP_PAT=`tr ' ' '|' <<<"${LESSER_INTS[$FREQ]}"`
+
+	INTR=${CONFIG["SSRC_${NSRC}%BACKUPINT"]}
+	LINT_EGREP_PAT=`tr ' ' '|' <<<"${LESSER_INTS[$INTR]}"`
 
 	# get all the crud from btrfs, minus the interval snaps we aren't backing up
-	SLST=`$SSH_C btrfs sub list --sort=ogen $UARG -o ${CONFIG["SSRC_$NSRC%BACKUPFS"]} |
-		grep "${CONFIG["SNAP_BASE_DIR"]}/${SSH_C:+$(hostname)/}$NSRC/" |
+	SLST=`$SSH_C btrfs sub list --sort=ogen $UARG -o $BDIR |
+		grep "$GDIR/$NSRC/" |
 		egrep -v "$LINT_EGREP_PAT" | tr '\n' '\r'`
 
 	for ((S = 0; ; S++)) ; do
@@ -869,13 +1105,14 @@ _ssched_bsub_list()
 		else
 			SLST="${SLST#*}"
 		fi
-		# sift out the uuid and the path and put into a string separated by a space
+		# sift out the uuid and the path and put into a string
+		# separated by a space
 		SSUB=${SSUB#*uuid }
 		SNP[S]="${SSUB%% *} ${SSUB#*path }"
 	done
-
-	echo $S
 }
+
+fi # OLDBASH
 
 
 # change the max snap count for a particular source and interval
@@ -885,7 +1122,7 @@ ssched_mod_maxsnapcount()
 	local NSRC
 	local INT INTRVAL
 	local NMAX
-	local USTR MSG PLURAL MSGCMP
+	local USTR MSG PLURAL
 	local REDUCING
 
 	USTR='usage: mod_maxsnapcount <file-system> <interval> <new max>\ninterval: one of hourly, daily, weekly, monthly\nnew-max: the new max snapcount'
@@ -906,16 +1143,16 @@ ssched_mod_maxsnapcount()
 	# validate interval, and set error message completion string.
 	case "$INT" in
 		hourly)
-			MSGCMP="Pick another value, or use dailies to suppliment."
+			MSG="Pick another value, or use dailies to suppliment."
 			;;
 		daily)
-			MSGCMP="Pick another value, or use weeklies to suppliment."
+			MSG="Pick another value, or use weeklies to suppliment."
 			;;
 		weekly)
-			MSGCMP="Pick another value, or use monthlies to suppliment."
+			MSG="Pick another value, or use monthlies to suppliment."
 			;;
 		monthly)
-			MSGCMP="Pick a value from 2-24."
+			MSG="Pick a value from 2-24."
 			;;
 		*)
 			echo -e "$USTR"
@@ -927,7 +1164,7 @@ ssched_mod_maxsnapcount()
 	if [ \( "$NMAX" -lt 0 \) -o \( "$NMAX" -eq 1 \) -o \
 		\( "$NMAX" -gt "${IMAXSNAPS[$INT]}" \) ] ; then
 		echo "Ill advised or invalid max snapcount value of '$NMAX' for $INT"
-		echo "Disregarding.  Pick another value, or use ${MSGCMP}"
+		echo "Disregarding.  $MSG"
 		return 1
 	fi
 
@@ -1025,6 +1262,7 @@ ssched_mod_maxsnapcount()
 	fi
 }
 
+
 ####
 # set_{hour,dai,week,month}lies commands
 #
@@ -1103,11 +1341,19 @@ ssched_set_dailies()
 				TMIN=`printf "%d" "$2"`
 			   ;;
 			*)
-				echo "$UMSG"
+				serr "$UMSG"
+				serr "tod must me zero-padded HH:MM, in 24 hour spec, for ex.: 09:05"
 				return 1
 				;;
 		esac
 	fi
+
+	_ssched_validate_days "$DAYS" || {
+		serr "$UMSG"
+		serr "Unknown designation for days: '$DAYS'"
+		serr "Try 'weekdays' or 'mon-thu' or '1,3,6' and so on."
+		return 1
+	}
 
 	# these should also be validated against max snap count
 	case "$DAYS" in
@@ -1119,7 +1365,7 @@ ssched_set_dailies()
 			CTIMES="$TMIN $THOUR * * sat,sun"
 			;;
 		*)
-			# FIXME validate things like mon-thu or 1-5 or 1,3,5,7
+			# hopefully everything that passed validation will work
 			CTIMES="$TMIN $THOUR * * $DAYS"
 			;;
 	esac
@@ -1338,7 +1584,7 @@ ssched_set_monthlies()
 #command
 ssched_add_source()
 {
-	local SRCDIR NSRC H D W M
+	local SRCDIR NSRC I F
 	local -l ANS
 
 	# arguments:
@@ -1363,14 +1609,11 @@ ssched_add_source()
 
 	if _ssched_validate_nsrc NSRC 2>/dev/null ; then
 		echo "Source '$NSRC' already exists in config file."
-		read -p "Are you sure you want to overwrite it? [Ny] " ANS
-		if [ -z "$ANS" ] ; then
-			return 0
-		fi
-		ANS=${ANS:0:1}
-		if [ "$ANS" -ne y ] ; then
-			return 0
-		fi
+		echo "Perhaps you want to modify it with mod_maxsnapcount or"
+		echo "set_{hour,dai,week,month}lies commands.  Or one of the"
+		echo "crontab commands."
+		echo "Otherwise, you will have to remove it before adding it again."
+		return 1
 	fi
 
 	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
@@ -1378,78 +1621,43 @@ ssched_add_source()
 	SRCDIR=${CONFIG[SNAP_MOUNT_DIR]}/$NSRC
 
 	if [ ! -d $SRCDIR ] ; then
-		echo "Couldn't find $SRCDIR.  You have to have a volume or snapshot to make snapshots of, asshole."
+		echo "No such directory '$SRCDIR'.  This must be the location of the"
+		echo "source subvolume to make snapshots from."
 		_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 		return 1
 	fi
 
-	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+	_ssched_umount_rootvol "${CONFIG[SNAP_MOUNT_DIR]}"
 
-	# this will overwrite any previous config for this source
 	CONFIG["SSRC_$NSRC"]=$SRCDIR
 
-	local ILEN=`expr length SSRC_${NSRC}%`
-	for H in "${!CONFIG[@]}" ; do
-		if [ `expr match SSRC_$NSRC% $H` -gt "$ILEN" ] ; then
-			unset CONFIG[$H]
+	# just in case.  of bugs.
+	for I in "${!CONFIG[@]}" ; do
+		if expr match "$I" "SSRC_$NSRC%" >/dev/null ; then
+			unset CONFIG[$I]
 		fi
 	done
 
+	# process the arg for each interval
+	for I in ${!IMAXSNAPS} ; do
+		# process the max snap count for ${I%y}lies
+		if [ "$1" -lt 0 ] ; then
+			echo "Overriding max snap count for ${I%y}lies to 0 (disabled)"
+			F=0
+		elif [ "$1" -gt ${IMAXSNAPS[$I]} ] ; then
+			echo "Overriding max snap count for ${I%y}lies to ${IMAXSNAPS[$I]}"
+			F=${IMAXSNAPS[$I]}
+		else
+			F=$1
+		fi
+		CONFIG["SSRC_${NSRC}%`_ssched_int2u $I`_MSC"]=$F
+		shift
+	done
 
-	# process the max snap count for hourlies
-	if [ "$1" -lt 0 ] ; then
-		echo "Overriding max snap count for hourlies to 0 (disabled)"
-		H=0
-	elif [ "$1" -gt 36 ] ; then
-		echo "Overriding max snap count for hourlies to 36"
-		H=36
-	else
-		H=$1
+	if [ "$#" -ge 1 ] ; then
+		# process the DBs argument(s)
+		CONFIG["SSRC_${NSRC}%DBS"]="$*"
 	fi
-	CONFIG["SSRC_${NSRC}%H_MSC"]=$H
-	shift
-
-	# process the max snap count for dailies
-	if [ "$1" -lt 0 ] ; then
-		echo "Overriding max snap count for dailies to 0 (disabled)"
-		D=0
-	elif [ "$1" -gt 14 ] ; then
-		echo "Overriding max snap count for dailies to 14"
-		D=14
-	else
-		D=$1
-	fi
-	CONFIG["SSRC_${NSRC}%D_MSC"]=$D
-	shift
-
-	# process the max snap count for weeklies
-	if [ "$1" -lt 0 ] ; then
-		echo "Overriding max snap count for weeklies to 0 (disabled)"
-		W=0
-	elif [ "$1" -gt 10 ] ; then
-		echo "Overriding max snap count for weeklies to 10"
-		W=10
-	else
-		W=$1
-	fi
-	CONFIG["SSRC_${NSRC}%W_MSC"]=$W
-	shift
-
-	# process the max snap count for monthlies
-	if [ "$1" -lt 0 ] ; then
-		echo "Overriding max snap count for monthlies to 0 (disabled)"
-		M=0
-	elif [ "$1" -gt 24 ] ; then
-		echo "Overriding max snap count for monthlies to 24"
-		M=24
-	else
-		M=$1
-	fi
-	CONFIG["SSRC_${NSRC}%M_MSC"]=$M
-	shift
-
-	# process the DBs argument
-	CONFIG["SSRC_${NSRC}%DBS"]="$*"
 
 	_ssched_write_config
 
@@ -1487,7 +1695,17 @@ ssched_remove_source()
 		exit 1
 	fi
 
-	# FIXME what about deleting the scheduled snapshots?!?
+	# disable any further snapping
+	for I in ${!IMAXSNAPS[*]} ; do
+		R=`_ssched_int2u $I`
+		if [ "${CONFIG[SSRC_$NSRC%${R}_DAT]}" -a \
+			\( "${CONFIG[SSRC_$NSRC%${R}_MSC]}" -gt 0 \) ] ; then
+			_ssched_rm_pkgcrontab $NSRC $I
+		fi
+		CONFIG[SSRC_$NSRC%${R}_MSC]=0
+	done
+	_ssched_write_config
+
 	# use btrfs show command to list snapshots OR
 	# use btrfs list -u [idiotic output] | grep "path $SRCDIR"
 	# then use btrfs sub del -c `btrfs list -q | grep "parent_uuid $UUID"`
@@ -1497,17 +1715,21 @@ ssched_remove_source()
 	# snapshots under .ssched/$NSRC/
 	ANS=
 	SSNAPS_BDIR="${CONFIG[SNAP_MOUNT_DIR]}/${CONFIG[SNAP_BASE_DIR]}/$NSRC"
-	CHILD_SNAPS=$SSNAPS_BDIR/*/*
+	CHILD_SNAPS=`echo $SSNAPS_BDIR/*/*`
 	if [ "$CHILD_SNAPS" != "$SSNAPS_BDIR/*/*" ] ; then
-		echo "Delete all the scheduled snapshot of this former source?"
-		echo $CHILD_SNAPS |
-			sed "s|^$SSNAPS_BDIR/||" | sed "s|$SSNAPS_BDIR/|\n|g"
+		echo "Delete all the scheduled snapshots of this former source?"
+		sed -e "s|^$SSNAPS_BDIR/||" -e "s|$SSNAPS_BDIR/|\n|g" <<<"$CHILD_SNAPS"
 		read -p "Answer must be 'yes' to delete.  Really delete all? " ANS
 		if [ "$ANS" = yes ] ; then
+			echo "The scheduled snapshots of '$NSRC' will be deleted now."
 			btrfs sub del -c $CHILD_SNAPS
+			# even after a sync, the writes and recovered space
+			# take a while to happen.  for no good reason.
+			sync
+			sleep 2
 		else
 			ANS=
-			echo "As you wish.  The source '$NSRC' will be removed from the config file"
+			echo "The scheduled snapshots of '$NSRC' will remain intact."
 		fi
 	fi
 
@@ -1522,10 +1744,14 @@ ssched_remove_source()
 		echo "know exactly what you are doing!"
 		read -p "Are you double-sure you want to delete subvolume '$NSRC' No/yes ? " ANS
 		if [ "$ANS" = yes ] ; then
+			echo "The source subvolume '$NSRC' will be deleted now."
 			btrfs sub del -c "$SRCDIR"
 			ES=$?
+			sync
 		fi
 	fi
+
+	echo "The source '$NSRC' will be removed from the config file"
 
 	_ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
@@ -1534,21 +1760,10 @@ ssched_remove_source()
 	fi
 
 	# delete them
-	unset CONFIG["SSRC_$NSRC"]
-	unset CONFIG["SSRC_${NSRC}%H_MSC"]
-	unset CONFIG["SSRC_${NSRC}%D_MSC"]
-	unset CONFIG["SSRC_${NSRC}%W_MSC"]
-	unset CONFIG["SSRC_${NSRC}%M_MSC"]
-	unset CONFIG["SSRC_${NSRC}%DBS"]
-	for I in hour dai week month ; do
-		I=${I}ly
-		R=`_ssched_int2u $I`
-		if [ "${CONFIG[SSRC_$NSRC%${R}_DAT]}" ] ; then
-			unset CONFIG[SSRC_$NSRC%${R}_DAT]
-			unset CONFIG[SSRC_$NSRC%${R}_TOD]
-			# if the MSC was zero for this interval, then there won't
-			# be an entry to delete, but whatever
-			_ssched_rm_pkgcrontab $NSRC $I
+	unset CONFIG[SSRC_$NSRC]
+	for I in ${!CONFIG[*]} ; do
+		if expr match "$I" "SSRC_$NSRC%" >/dev/null ; then
+			unset CONFIG[$I]
 		fi
 	done
 
@@ -1602,25 +1817,12 @@ ssched_diff()
 		return 1
 
 	# validate int type
-	case "$INTTYPE" in
-		h|hour*)
-			INTR=hourly
-			;;
-		d|day*|daily|dailies)
-			INTR=daily
-			;;
-		w|week*)
-			INTR=weekly
-			;;
-		m|month*)
-			INTR=monthly
-			;;
-		*)
-			serr -e "$USTR"
-			serr "Bad interval value: '$INTTYPE'"
-			return 1
-			;;
-	esac
+	INTR=`_ssched_nom_int "$INTTYPE"`
+	if [ -z "$INTR" ] ; then
+		serr -e "$USTR"
+		serr "Bad interval value: '$INTTYPE'"
+		return 1
+	fi
 
 	_ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
 
@@ -1711,25 +1913,12 @@ ssched_get()
 		return 1
 
 	# validate int type
-	case "$INTTYPE" in
-		h|hour*)
-			INTR=hourly
-			;;
-		d|day*|daily|dailies)
-			INTR=daily
-			;;
-		w|week*)
-			INTR=weekly
-			;;
-		m|month*)
-			INTR=monthly
-			;;
-		*)
-			serr -e "$USTR"
-			serr "Bad interval value: '$INTTYPE'"
-			return 1
-			;;
-	esac
+	INTR=`_sched_nom_int "$INTTYPE"`
+	if [ -z "$INTR" ] ; then
+		serr -e "$USTR"
+		serr "Bad interval value: '$INTTYPE'"
+		return 1
+	fi
 
 	$SUDOCMD _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || return $?
 
@@ -1742,8 +1931,6 @@ ssched_get()
 	SDIR="$SDIR/`\ls $SDIR | tail -$BN | head -1`"
 
 	# try to make it relative if FNAM doesn't start with /
-	# don't remember why the expr is needed, but no doubt it was a hard
-	# learned lesson
 	if expr match "$FNAM" / >/dev/null ; then
 		FPATH="$FNAM"
 	else
@@ -1775,7 +1962,7 @@ ssched_get()
 	fi
 
 	# whatever errors cp gets about no files, etc, just poop 'em on to the user
-	${SSCHED_GET:-$CP_CMD} $CPARGS "$SDIR/$FPATH" "${ONAM:+"$ONAM"}"
+	${SSCHED_GET:-$CP_CMD} $CPARGS "$SDIR/$FPATH" ${ONAM:+"$ONAM"}
 	ES=$?
 
 	$SUDOCMD _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
@@ -1787,11 +1974,11 @@ ssched_get()
 #command
 ssched_set_backup()
 {
-	local NSRC BHOST1 BFSNAME
+	local NSRC BHOST1 BHOST1FS
 	local BHOST1 BHOST1Z
 	local -l INTR
 	local I
-	local USTR="usage: set_backup <source-name> <bfs-name> <int-type> <backup-host-name> <ssh-compress-yes-no>"
+	local USTR="usage: set_backup <source-name> <int-type> <backup-host-name> <bfs-name> <ssh-compress-yes-no>"
 
 	if [ "$#" -lt 4 ] ; then
 		serr "wrong number of arguments: $#"
@@ -1800,14 +1987,14 @@ ssched_set_backup()
 	fi
 
 	NSRC="$1"
-	BFSNAME="$2"
-	INTR=`_ssched_nom_int "$3"`
+	INTR=`_ssched_nom_int "$2"`
 	if [ -z "$INTR" ] ; then
 		serr -e "$USTR"
-		serr "Bad interval value: '$3'"
+		serr "Bad interval value: '$2'"
 		return 1
 	fi
-	BHOST1="$4"
+	BHOST1="$3"
+	BHOST1FS="$4"
 	shift;shift;shift;shift
 	if [ "$#" -ge 1 ] ; then
 		BHOST1Z="$1"
@@ -1837,7 +2024,7 @@ ssched_set_backup()
 
 	CONFIG["SSRC_${NSRC}%BACKUPHOST1"]="$BHOST1"
 	CONFIG["SSRC_${NSRC}%BACKUPHOST1_Z"]="$BHOST1Z"
-	CONFIG["SSRC_${NSRC}%BACKUPFS"]="$BFSNAME"
+	CONFIG["SSRC_${NSRC}%BACKUPHOST1FS"]="$BHOST1FS"
 	CONFIG["SSRC_${NSRC}%BACKUPINT"]="$INTR"
 
 	echo
@@ -1894,25 +2081,12 @@ ssched_rm_backup()
 	shift;shift
 
 	# validate int type
-	case "$INTTYPE" in
-		h|hour*)
-			INTR=hourly
-			;;
-		d|day*|daily|dailies)
-			INTR=daily
-			;;
-		w|week*)
-			INTR=weekly
-			;;
-		m|month*)
-			INTR=monthly
-			;;
-		*)
-			serr -e "$USTR"
-			serr "Bad interval value: '$INTTYPE'"
-			return 1
-			;;
-	esac
+	INTR=`_sched_nom_int "$INTTYPE"`
+	if [ -z "$INTR" ] ; then
+		serr -e "$USTR"
+		serr "Bad interval value: '$INTTYPE'"
+		return 1
+	fi
 
 	# validate NSRC, and read config file if necessary
 	_ssched_validate_nsrc NSRC "$USTR" ||
@@ -1924,12 +2098,10 @@ ssched_rm_backup()
 		fi
 	done
 	# unset CONFIG["SSRC_${NSRC}%BACKUPHOST1"]
+	# unset CONFIG["SSRC_${NSRC}%BACKUPHOST1FS"]
 	# unset CONFIG["SSRC_${NSRC}%BACKUPHOST1_Z"]
-	# unset CONFIG["SSRC_${NSRC}%BACKUPFS"]
 	# unset CONFIG["SSRC_${NSRC}%BACKUPINT"]
 
 	# save the config entries
 	_ssched_write_config
-
-	# TODO we need to remove the cron jobs.
 }
