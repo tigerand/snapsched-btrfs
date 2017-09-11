@@ -3,9 +3,19 @@
 # depends: at bash bsdmainutils cron sed
 # depends: if ({mysql,postgresql} database specified) {mysql,postgresql}-client
 
+declare -A CONFIG
+export CONFIG
+ETC=/etc
+export ETCDIR=$ETC/snapsched
+export CFGFILE=$ETCDIR/config
+export INTCRONFILE_BASE=snapsched
+export CRONTAB=$ETC/cron.d/$INTCRONFILE_BASE
+export CRONPROG=$PRE/lib/snapsched/scheduled
+export TMPBASE=/tmp/ssched
+
 export PRE=/usr/local
 
-# uber snapshced command
+# uber snapsched command
 export SSCHED_UBER=y
 
 CMD=$1
@@ -101,7 +111,7 @@ lssnap_help()
 	echo "                  Called with two arguments <filesystem-name> <interval-list>"
 	echo "                    lists all snapshots for that source/interval pairing."
 	echo "                    interval-list may be a comma separated list"
-	echo "                    from hourly, daily, weekly, monthly"
+	echo "                    from h[ourly], d[aily], w[eekly], m[onthly]"
 }
 
 set_btrfspath_help()
@@ -185,15 +195,15 @@ set_monthlies_help()
 set_backup_help()
 {
 	echo "set_backup :  Setup and initiate the backup feature for a src/interval"
-	echo "              Args: <fs> <bfs-dir> <interval> <backup-host> [<compress>]"
+	echo "              Args: <fs> <interval> <backup-host> <bfs-dir> [<compress>]"
 	echo "              fs is the file system subvolume parent of the snapshots"
 	echo "                to be backed up, as already configured."
-	echo "              bfs-dir is the directory on the backup host of the btrfs"
-	echo "                file system that will receive the backup snapshot."
 	echo "              interval is the interval level that will be backed up - all"
 	echo "                interval levels above this one will be backed up."
 	echo "              backup-host is the hostname/IP-addr of the host that"
 	echo "                will receive the snapshot."
+	echo "              bfs-dir is the directory on the backup host of the btrfs"
+	echo "                file system that will receive the backup snapshot."
 	echo "              compression ([off],on) specifies using compression arg"
 	echo "                with ssh when doing the xfer.  Compression is generally"
 	echo "                much slower on fast (> 100Base-T) connections."
