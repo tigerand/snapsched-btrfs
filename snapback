@@ -11,14 +11,13 @@
 declare -A CONFIG
 export CONFIG
 ETC=/etc
+export PRE=/usr/local
 export ETCDIR=$ETC/snapsched
 export CFGFILE=$ETCDIR/config
 export INTCRONFILE_BASE=snapsched
 export CRONTAB=$ETC/cron.d/$INTCRONFILE_BASE
 export CRONPROG=$PRE/lib/snapsched/scheduled
 export TMPBASE=/tmp/ssched
-
-export PRE=/usr/local
 
 exec 2>&1
 
