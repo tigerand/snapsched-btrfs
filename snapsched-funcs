@@ -438,14 +438,25 @@ _ssched_lssnap_single()
 ssched_list_sources()
 {
 	local S SN SRCS DBS
+	local MSTR MWIDTH
+	local USTR="ssched_list_sources [-l | -d] [<source-spec>]"
 
 	_ssched_read_config
 
 	SRCS=`_ssched_list_cfg_srcs`
 
+	if [ "$2" ] ; then
+		if ! grep -qsw "$2" <<<"$SRCS" ; then
+			omsg "Source '$2' not configured."
+			omsg "$USTR"
+			return 1
+		fi
+		SRCS="$2"
+	fi
+
 	if [ "$1" = -l ] ; then
-		echo -e "\t     Max Max Max Max Hourly  Daily          Weekly    Monthly"
-		echo -e "Fileset\t   hours day  wk mon   TOD  DAYS/TOD       DAY/TOD   DOM/TOD"
+		echo -e "\t     Max Max Max Max Hourly    Daily          Weekly   Monthly"
+		echo -e "Fileset\t   hours day  wk mon    TOD  DAYS/TOD        DAY/TOD   DOM/TOD"
 
 		for S in $SRCS ; do
 			if [ ${#S} -gt 12 ] ; then
@@ -453,16 +464,26 @@ ssched_list_sources()
 			else
 				SN="$S"
 			fi
-			printf "%-14s%2d%4d%4d%4d %-6s  %-16s%-10s%-18s %s\n" "$SN" ${CONFIG[SSRC_$S%H_MSC]} ${CONFIG[SSRC_$S%D_MSC]} ${CONFIG[SSRC_$S%W_MSC]} ${CONFIG[SSRC_$S%M_MSC]} "${CONFIG[SSRC_$S%H_TOD]:-unset}" "${CONFIG[SSRC_$S%D_DAT]:-def}/${CONFIG[SSRC_$S%D_TOD]:-def}" "${CONFIG[SSRC_$S%W_DAT]:-def}/${CONFIG[SSRC_$S%W_TOD]:-def}" "${CONFIG[SSRC_$S%M_DAT]-def}/${CONFIG[SSRC_$S%M_TOD]:-def}"
+			MSTR="${CONFIG[SSRC_$S%M_DAT]-def}/${CONFIG[SSRC_$S%M_TOD]:-def}"
+			MWIDTH=${#MSTR}
+			printf "%-14s%2d%4d%4d%4d %6s  %-16s%-10s%-s\n" "$SN" \
+				${CONFIG[SSRC_$S%H_MSC]} \
+				${CONFIG[SSRC_$S%D_MSC]} \
+				${CONFIG[SSRC_$S%W_MSC]} \
+				${CONFIG[SSRC_$S%M_MSC]} \
+				"${CONFIG[SSRC_$S%H_TOD]:-def }" \
+				"${CONFIG[SSRC_$S%D_DAT]:-def}/${CONFIG[SSRC_$S%D_TOD]:-def}" \
+				"${CONFIG[SSRC_$S%W_DAT]:-def}/${CONFIG[SSRC_$S%W_TOD]:-def}" \
+				"$MSTR"
 		done
 	elif [ "$1" = -d ] ; then
+		echo -e "Fileset                Databases"
 		for S in $SRCS ; do
 			if [ ${#S} -gt 22 ] ; then
 				SN=${S:0:21}
 			else
 				SN="$S"
 			fi
-			echo -e "Fileset                Databases"
 			if [ "${CONFIG[SSRC_$S%DBS]}" ] ; then
 				DBS="${CONFIG[SSRC_$S%DBS]//,/ }"
 			else
@@ -958,23 +979,29 @@ _ssched_validate_days()
 	local LST
 	local -l I
 
+	# check for a comma; convert to space
 	if [ "$ARG" != "${ARG#,*}" ] ; then
 		LST="${ARG//,/ }"
+	# check for a dash
 	elif [ "$ARG" != "${ARG#-*}" ] ; then
 		LST="${ARG//-/ }"
 	fi
 	if [ "$LST" ] ; then
 		ARG="$LST"
 	fi
+
 	for I in $ARG ; do
 		case "$I" in
-			mon|tue|wed|thu|fri|sat|sun)
+			mon|tue|wed|thu|fri|sat|sun|all)
 				:
 				;;
 			weekdays)
 				:
 				;;
 			[0-9]) # 0 and 1 translate to the same thing in cron.  i think.
+				:
+				;;
+			\*)
 				:
 				;;
 			*)
@@ -1295,7 +1322,7 @@ ssched_mod_maxsnapcount()
 #command
 ssched_set_dailies()
 {
-	local NSRC DAYS TOD CTIMES
+	local NSRC DARG DAYS TOD CTIMES
 	local -l NO_READ_CFG # converts to lowercase on assignment
 	local UMSG="usage: set_dailies <source-name> <days> [<tod>]"
 	local THOUR=0 TMIN=1
@@ -1306,7 +1333,7 @@ ssched_set_dailies()
 	fi
 
 	NSRC="$1"
-	DAYS="$2"
+	DARG="$2"
 	shift;shift
 	if [ "$#" -eq 2 ] ; then
 		TOD="$1"
@@ -1348,13 +1375,18 @@ ssched_set_dailies()
 		esac
 	fi
 
-	_ssched_validate_days "$DAYS" || {
+	_ssched_validate_days "$DARG" || {
 		serr "$UMSG"
-		serr "Unknown designation for days: '$DAYS'"
-		serr "Try 'weekdays' or 'mon-thu' or '1,3,6' and so on."
+		serr "Unknown designation for days: '$DARG'"
+		serr "Try 'weekdays' or 'mon-thu' or '1,3,6' or 'all' and so on."
 		return 1
 	}
 
+	if [ "$DARG" = all ] ; then
+		DAYS='*'
+	else
+		DAYS="$DARG"
+	fi
 	# these should also be validated against max snap count
 	case "$DAYS" in
 		weekdays)
@@ -1370,7 +1402,7 @@ ssched_set_dailies()
 			;;
 	esac
 
-	CONFIG[SSRC_$NSRC%D_DAT]="$DAYS"
+	CONFIG[SSRC_$NSRC%D_DAT]="$DARG"
 	CONFIG[SSRC_$NSRC%D_TOD]="$TOD"
 	_ssched_write_config
 
