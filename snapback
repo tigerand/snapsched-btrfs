@@ -254,11 +254,14 @@ if [ "${#SNAP_XFER_LST[*]}" -gt 0 ] ; then
 	echo
 
 	# create target directories on backup host if needed
-	TDIR="${TPDIRS[*]}"
-	eval ssh -x $BHOST1 mkdir -p $BSDIR/{${TDIR%,}} >/dev/null
+	# broken...
+	# TDIR="${TPDIRS[*]}"
+	# eval ssh -x $BHOST1 mkdir -p $BSDIR/{${TDIR%,}} >/dev/null
 
 	# send the snaps
 	for SNAP in "${SNAP_XFER_LST[@]}" ; do
+		D=`dirname $SNAP`
+		D=`basename $D`
 		# echo "cp_snap 'ssh -x' '$SSHZ_ARG' '$BHOST1' '$SNAP' '$BSDIR/$D'"
 		cp_snap "ssh -x $SSHZ_ARG $BHOST1" "$SNAP" "$BSDIR/$D" &&
 			SNAP_SENT_LST+=("$SNAP") || {
