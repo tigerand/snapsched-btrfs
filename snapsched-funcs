@@ -332,15 +332,19 @@ _ssched_list_cfg_srcs()
 	local C
 	local -a SRCS_LIST
 
-	for C in "${!CONFIG[@]}" ; do
-		if [ "$C" = "${C#SSRC_}" ] ; then
-			continue
-		fi
-		if [ "$C" = "${C%\%*}" ] ; then
-			_sort SRCS_LIST "${C#SSRC_}"
-		fi
-	done
-	echo ${SRCS_LIST[*]}
+	if $OLDBASH ; then
+		echo ${!CONFIG[*]} | grep -o 'SSRC_[^ ]*' | grep -v \% | sed 's/^SSRC_//'
+	else
+		for C in "${!CONFIG[@]}" ; do
+			if [ "$C" = "${C#SSRC_}" ] ; then
+				continue
+			fi
+			if [ "$C" = "${C%\%*}" ] ; then
+				_sort SRCS_LIST "${C#SSRC_}"
+			fi
+		done
+		echo ${SRCS_LIST[*]}
+	fi
 
 # alternate method.  which is better?
 #	echo ${!CONFIG[*]} | grep -o 'SSRC_[^ ]*' | grep -v \% | sed 's/^SSRC_//'
@@ -1759,8 +1763,9 @@ ssched_remove_source()
 			# take a while to happen.  for no good reason.
 			sync
 			sleep 2
+			ANS=already
 		else
-			ANS=
+			ANS=not
 			echo "The scheduled snapshots of '$NSRC' will remain intact."
 		fi
 	fi
@@ -1768,9 +1773,9 @@ ssched_remove_source()
 	ES=0
 	echo "Do you wish to delete the source subvolume itself?"
 	echo "This has no effect on scheduled snapshots of the subvolume, which"
-	echo "you have${ANS:= not} already deleted."
+	echo "you have ${ANS} deleted."
 	ANS=
-	read -p "[no]/yes ? " ANS
+	read -p "Delete the source subvolume [no]/yes ? " ANS
 	if [ "$ANS" = yes ] ; then
 		echo "Are you super-sure?  This is very dangerous, and you MUST"
 		echo "know exactly what you are doing!"
@@ -1791,6 +1796,11 @@ ssched_remove_source()
 		serr "Error deleting snapshot dir '$SRCDIR': $ES"
 	fi
 
+	# remove the cron jobs
+	for I in ${!IMAXSNAPS[*]} ; do
+		_ssched_remove_cron "$NSRC" ${I}
+	done
+
 	# delete them
 	unset CONFIG[SSRC_$NSRC]
 	for I in ${!CONFIG[*]} ; do
@@ -1800,8 +1810,6 @@ ssched_remove_source()
 	done
 
 	_ssched_write_config
-
-	ssched_delete_cronjobs $NSRC
 
 	echo "Scheduled snapshot source '$NSRC' removed from config file and"
 	echo "cron jobs."
@@ -1945,7 +1953,7 @@ ssched_get()
 		return 1
 
 	# validate int type
-	INTR=`_sched_nom_int "$INTTYPE"`
+	INTR=`_ssched_nom_int "$INTTYPE"`
 	if [ -z "$INTR" ] ; then
 		serr -e "$USTR"
 		serr "Bad interval value: '$INTTYPE'"
@@ -2113,7 +2121,7 @@ ssched_rm_backup()
 	shift;shift
 
 	# validate int type
-	INTR=`_sched_nom_int "$INTTYPE"`
+	INTR=`_ssched_nom_int "$INTTYPE"`
 	if [ -z "$INTR" ] ; then
 		serr -e "$USTR"
 		serr "Bad interval value: '$INTTYPE'"
