@@ -608,8 +608,12 @@ ssched_create_cronjobs()
 
 	for JOB in ${!IMAXSNAPS[*]} ; do
 
+		if [ -z "${CONFIG["SSRC_${NSRC}%`_ssched_int2u $JOB`_MSC"]}" ] ; then
+			serr "cannot create cronjob $JOB for '$NSRC' because of invalid MSC"
+			return 1
+		fi
 		# if max snap count is 0, then snaps at that interval are disabled
-		if [ ${CONFIG["SSRC_${NSRC}%`_ssched_int2u $JOB`_MSC"]} -eq 0 ] ; then
+		if [ "${CONFIG["SSRC_${NSRC}%`_ssched_int2u $JOB`_MSC"]}" -eq 0 ] ; then
 			continue
 		fi
 
@@ -1632,7 +1636,7 @@ ssched_add_source()
 	#   ssched_add_source r00t 25 6 5 13 mysql postgresql-9.1
 	#   ssched_add_source h0me 24 8 0 12
 
-	# check caller
+	# if caller is not the snapsched app ...
 	if [ "$SSCHED_UBER" != y ] ; then
 		return 1
 	fi
@@ -1677,7 +1681,7 @@ ssched_add_source()
 	done
 
 	# process the arg for each interval
-	for I in ${!IMAXSNAPS} ; do
+	for I in ${!IMAXSNAPS[*]} ; do
 		# process the max snap count for ${I%y}lies
 		if [ "$1" -lt 0 ] ; then
 			echo "Overriding max snap count for ${I%y}lies to 0 (disabled)"
@@ -2099,7 +2103,7 @@ ssched_set_backup()
 
 	 # using queue 's' nices it down, supposedly.  which is nice.
 	 # but since nice has no effect on btrfs send/recv, it's just silly.
-	 echo $PX/lib/snapsched/snapback $NSRC $I | 
+	 echo $PX/lib/snapsched/snapback $NSRC $I |
 		at -q s "now + 5 minutes"
 	)
 
