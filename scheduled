@@ -124,10 +124,6 @@ if [ -d "$TDIR" ] ; then
 	exit 1
 fi
 
-# the question here is, do we continue to make new snap shots during
-# this period, and just delete the oldest snapshot in this period, or do
-# we just stop making new snapshots?
-
 # for now, delete oldest then make new snapshot
 # should really delete in a loop until below MSC - recovery
 # from oversnapping condition
