@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # program to perform backups
-# called by cron.
+# called by at.
+
+# depends: lockfile-progs
 
 
 # this program will ostensibly be able to fix situations where a snapshot
@@ -144,6 +146,7 @@ BHOST1=${CONFIG["SSRC_${NSRC}%BACKUPHOST1"]}
 BHOST1FS=${CONFIG["SSRC_${NSRC}%BACKUPHOST1FS"]}
 BHOST1Z=${CONFIG["SSRC_${NSRC}%BACKUPHOST1_Z"]}
 FREQ=${CONFIG["SSRC_${NSRC}%BACKUPINT"]}
+MTYPE="${CONFIG[SSRC_${NSRC}%BACKUPMTYPE]}"
 
 # check to see if we can see the backup host
 # a laptop might be traveling, or backup host offline for maintenance
@@ -167,6 +170,59 @@ else
 	OSILENT=--quiet
 	:
 fi
+
+# mitigate the network traffic usage and the overhead of multiple backups
+# sending at the same time.  possible configs are:
+#    N simultaneous to the same backup host
+#       N simultaneous from the perspective of the backup host - other
+#         systems sending to that host besides this one
+#    N simultaneous
+#    N simultaneous per network segment
+
+LCK_FILE=$SNAP_VAR/snapback_backups_
+SLEEP_S=180
+
+mkdir -p `dirname $LCK_FILE` 2>/dev/null
+
+case "${MTYPE% *}" in
+	host)
+		LCK_FILE=${LCK_FILE}${BHOST1}_
+		;&
+	backups)
+		while : ; do
+			NLOCKS=`\ls $LCK_FILE}*.lck 2>/dev/null`
+			if [ -z "$" ] ; then
+				GLOCK_FILE=${LCK_FILE}1.lck
+				_ssched_lockfile_p $GLOCK_FILE
+			else
+				# wait 3 minutes and see if there's an open slot
+				if [ "$NLOCKS" -ge ${MTYPE#* } ] ; then
+					sleep $SLEEP_S
+					continue
+				fi
+
+				for I in 1 2 3 4 ; do
+					if [ "$I" -gt "${MTYPE#* }" ] ; then
+						break
+					fi
+					if [ -e "${LCK_FILE}$I" ] ; then
+						continue
+					fi
+					GLOCK_FILE=${LCK_FILE}$I.lck
+					_ssched_lockfile_p $GLOCK_FILE
+					break
+				done
+				if [ -z "$GLOCK_FILE" ] ; then
+					omsg "$NSRC: failed to find slot when expecting to.  NLOCKS=$NLOCKS"
+					sleep $SLEEP_S
+					continue
+				fi
+			fi
+			break
+		done
+		;;
+esac
+
 
 _ssched_mount_rootvol ${CONFIG[SNAP_MOUNT_DIR]} || {
 	ES=$?
@@ -275,5 +331,7 @@ fi
 cd - >/dev/null
 
 _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
+
+_ssched_lockfile_v $GLOCK_FILE
 
 exit

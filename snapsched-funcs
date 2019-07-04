@@ -19,6 +19,8 @@ LESSER_INTS[monthly]="hourly daily weekly"
 
 GSUDOCMD=sudo
 
+SNAP_VAR=/var/lib/snapsched
+
 if [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
 	# we're screwed
 	OLDBASH=true
@@ -632,8 +634,8 @@ _ssched_init_pkgcrontab()
 		cat <<-PKGCRONTABEND > $CRONTAB
 			# snapsched package crontab
 			# WARNING: this file is programmatically modified by the snapsched
-			#     command without benefit of locking, so, if you hand edit, you
-			#      might mess it up.  You have been warned sufficiently.
+			#    command without benefit of locking, so, if you hand edit, you
+			#    might mess it up.  You have been warned sufficiently.
 			SHELL=/bin/bash
 			PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
@@ -707,6 +709,25 @@ ssched_print_config()
 		echo "Error reading config file.   Perhaps it doesn't exist."
 	}
 }
+
+
+_ssched_lockfile_p()
+{
+	/usr/bin/lockfile-create -q --lock-name "$1" || {
+		serr "failed to get lock on file $LCK_FILE"
+		return 1
+	}
+	/usr/bin/lockfile-touch --lock-name "$1" &
+	LFT_PID=$!
+}
+
+_ssched_lockfile_v()
+{
+	kill $LFT_PID
+	/usr/bin/lockfile-remove --lock-name "$1"
+}
+
+
 
 _ssched_mysql_pause()
 {
@@ -2026,14 +2047,16 @@ ssched_get()
 ssched_set_backup()
 {
 	local NSRC BHOST1 BHOST1FS
-	local BHOST1 BHOST1Z
+	local BHOST1
+	local -l BHOST1Z
+	local MTYPE
 	local -l INTR
 	local I
-	local USTR="usage: set_backup <source-name> <int-type> <backup-host-name> <bfs-name> <ssh-compress-yes-no>"
+	local USTR="usage: set_backup <source-name> <int-type> <backup-host> <backup-fs-dir> <ssh-compress-yes-no> [<mitigation-type>]"
 
-	if [ "$#" -lt 4 ] ; then
-		serr "wrong number of arguments: $#"
-		echo "$USTR"
+	if [ "$#" -lt 5 ] ; then
+		serr "set_backup: wrong number of arguments - $#"
+		serr "$USTR"
 		return 1
 	fi
 
@@ -2046,15 +2069,52 @@ ssched_set_backup()
 	fi
 	BHOST1="$3"
 	BHOST1FS="$4"
-	shift;shift;shift;shift
-	if [ "$#" -ge 1 ] ; then
-		BHOST1Z="$1"
-		shift
-	else
-		BHOST1Z=off
-	fi
+	BHOST1Z="$5"
 
 	BHOST1Z=`_ssched_input2bool "$BHOST1Z"`
+	if [ "$?" -ne 0 ] ; then
+		serr "set_backup: compression arg must be one of 'on' or 'off'"
+		serr "$USTR"
+		return 1
+	fi
+
+	shift;shift;shift;shift;shift
+
+	if [ "$#" -ge 1 ] ; then
+		MTYPE="$1"
+		shift
+
+		# validate the mitigation type argument
+		case "${MTYPE% *}" in
+			host|backups)
+				:
+				;;
+			hostq|netseg)
+				serr "backup mitigation type '${MTYPE% *}' has not been implemented yet"
+				return 1
+				;;
+			*)
+				serr "backup mitigation type must be one of host|hostq|backups|netseg"
+				return 1
+				;;
+		esac
+		if [ -z "${MTYPE#${MTYPE% *}}" ] ; then
+			MTYPE="$MTYPE 1"
+		else
+			case "${MTYPE#* }" in
+				1-4)
+					:
+					;;
+				*)
+					serr "second half of backup mitigation type must be a number between 1 and 4 inclusive"
+					return 1
+					;;
+			esac
+		fi
+	else
+		MTYPE="host 1"
+	fi
+
 
 	# validate NSRC, and read config file if necessary
 	_ssched_validate_nsrc NSRC "$USTR" ||
@@ -2077,6 +2137,10 @@ ssched_set_backup()
 	CONFIG["SSRC_${NSRC}%BACKUPHOST1_Z"]="$BHOST1Z"
 	CONFIG["SSRC_${NSRC}%BACKUPHOST1FS"]="$BHOST1FS"
 	CONFIG["SSRC_${NSRC}%BACKUPINT"]="$INTR"
+	CONFIG["SSRC_${NSRC}%BACKUPMTYPE"]="$MTYPE"
+
+	# save the config entries
+	_ssched_write_config
 
 	echo
 	echo "Backups will be bootstrapped by sending all unsent snapshots to"
@@ -2085,15 +2149,14 @@ ssched_set_backup()
 	echo "If this is OK, then type 'yes', otherwise you will have to run this"
 	echo "command again later.  The job will kick off 5 minutes after this"
 	echo "command exits.  You can always use the at(1) command to reschedule"
-	echo "the job to another time, if you so desire."
+	echo "the job to another time, if you so desire.  Answer 'yes' if you wish"
+	echo "this bootstrapping to happen now.  Otherwise, it will happen the next"
+	echo "time this snapshot interval occurs."
 	echo
-	read -p "Do you wish to continue? [no] "
+	read -p "Do you wish to proceed with backup bootstrap? ([no] | yes) "
 	if [ "$REPLY" != yes ] ; then
-		return 1
+		return 0
 	fi
-
-	# save the config entries
-	_ssched_write_config
 
 	# schedule the backup bootstrap process
 	(cd /tmp/ssched
@@ -2106,9 +2169,6 @@ ssched_set_backup()
 	 echo $PX/lib/snapsched/snapback $NSRC $I |
 		at -q s "now + 5 minutes"
 	)
-
-	# TODO we need to schedule the cron jobs.  from the at program?
-	# they should only start after the at bootstrap has finished.
 }
 
 
@@ -2152,6 +2212,7 @@ ssched_rm_backup()
 	# unset CONFIG["SSRC_${NSRC}%BACKUPHOST1FS"]
 	# unset CONFIG["SSRC_${NSRC}%BACKUPHOST1_Z"]
 	# unset CONFIG["SSRC_${NSRC}%BACKUPINT"]
+	# unset CONFIG["SSRC_${NSRC}%BACKUPMTYPE"]
 
 	# save the config entries
 	_ssched_write_config
