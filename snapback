@@ -191,7 +191,7 @@ case "${MTYPE% *}" in
 	backups)
 		while : ; do
 			NLOCKS=`\ls $LCK_FILE}*.lck 2>/dev/null`
-			if [ -z "$" ] ; then
+			if [ -z "$NLOCKS" ] ; then
 				GLOCK_FILE=${LCK_FILE}1.lck
 				_ssched_lockfile_p $GLOCK_FILE
 			else
@@ -332,6 +332,8 @@ cd - >/dev/null
 
 _ssched_umount_rootvol ${CONFIG[SNAP_MOUNT_DIR]}
 
-_ssched_lockfile_v $GLOCK_FILE
+if [ "$MTYPE" ] ; then
+	_ssched_lockfile_v $GLOCK_FILE
+fi
 
 exit

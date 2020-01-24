@@ -610,12 +610,12 @@ ssched_create_cronjobs()
 
 	for JOB in ${!IMAXSNAPS[*]} ; do
 
-		if [ -z "${CONFIG["SSRC_${NSRC}%`_ssched_int2u $JOB`_MSC"]}" ] ; then
+		if [ -z "${CONFIG[SSRC_${NSRC}%`_ssched_int2u $JOB`_MSC]}" ] ; then
 			serr "cannot create cronjob $JOB for '$NSRC' because of invalid MSC"
 			return 1
 		fi
 		# if max snap count is 0, then snaps at that interval are disabled
-		if [ "${CONFIG["SSRC_${NSRC}%`_ssched_int2u $JOB`_MSC"]}" -eq 0 ] ; then
+		if [ "${CONFIG[SSRC_${NSRC}%`_ssched_int2u $JOB`_MSC]}" -eq 0 ] ; then
 			continue
 		fi
 
@@ -1702,7 +1702,8 @@ ssched_add_source()
 	done
 
 	# process the arg for each interval
-	for I in ${!IMAXSNAPS[*]} ; do
+	# ${!IMAXSNAPS[*]} does not evaluate in any particular order, so...
+	for I in hourly daily weekly monthly ; do
 		# process the max snap count for ${I%y}lies
 		if [ "$1" -lt 0 ] ; then
 			echo "Overriding max snap count for ${I%y}lies to 0 (disabled)"
@@ -2047,7 +2048,6 @@ ssched_get()
 ssched_set_backup()
 {
 	local NSRC BHOST1 BHOST1FS
-	local BHOST1
 	local -l BHOST1Z
 	local MTYPE
 	local -l INTR
