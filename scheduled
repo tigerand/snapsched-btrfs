@@ -127,7 +127,11 @@ fi
 # for now, delete oldest then make new snapshot
 # should really delete in a loop until below MSC - recovery
 # from oversnapping condition
-if [ `echo ${TBASE}/* | wc -w` -ge "$MAX_SCNT" ] ; then
+SNAPNAMES=`echo ${TBASE}/*`
+if [ "$SNAPNAMES" = "${TBASE}/*" ] ; then
+	SNAPNAMES=
+fi
+if [ `wc -w <<<"$SNAPNAMES"` -ge "$MAX_SCNT" ] ; then
 
 	# remove oldest first
 	OLDSNAP=`\ls $TBASE | head -1`
