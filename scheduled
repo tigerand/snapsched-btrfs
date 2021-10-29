@@ -45,14 +45,7 @@ _ssched_validate_nsrc SSRC "" ||
 
 SSRC=${CONFIG[SNAP_MOUNT_DIR]}/$SSRC
 
-# don't spam email for hourlies
-if [ "$FREQ" != hourly ] ; then
-	OSILENT=
-	:
-else
-	OSILENT=--quiet
-	:
-fi
+_ssched_set_verbosity
 
 omsg "$freq snapshot job for '$NSRC' at `date '+%F %T'`"
 
@@ -198,7 +191,7 @@ if [ \( "$ES" -eq 0 \) -a "$BINT" ] ; then
 	omsg -e "\n"
 	omsg -n "Backup job for ${NSRC}: "
 	echo "$PRE/lib/snapsched/snapback $NSRC" |
-		at "now + 5 minutes" 2>&1 | grep -v /bin/sh
+		at "now + 5 minutes" 2>&1 | grep -v /bin/sh | omsg
 fi
 
 exit $ES

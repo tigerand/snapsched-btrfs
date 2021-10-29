@@ -695,6 +695,7 @@ ssched_init_config()
 	CONFIG["SNAP_DAILY_DIR"]=daily
 	CONFIG["SNAP_WEEKLY_DIR"]=weekly
 	CONFIG["SNAP_MONTHLY_DIR"]=monthly
+	CONFIG["NOISY"]=daily
 
 	_ssched_write_config
 	ssched_delete_cronjobs
@@ -988,6 +989,24 @@ _ssched_validate_nsrc()
 	else
 		LSRC="`basename ${CONFIG[SSRC_$LSRC]}`"
 	fi
+}
+
+
+# set the verbosity level according to the config file
+_ssched_set_verbosity()
+{
+	# unless we've reached the noisy interval, don't spam emails
+	# this presumes IMAXSNAPS[*] substitutes in order
+	OSILENT=
+	for F in hourly daily weekly monthly ; do
+		if [ "$F" = "${CONFIG[NOISY]}" ] ; then
+			break
+		fi
+		if [ "$F" = "$FREQ" ] ; then
+			OSILENT=--quiet
+			break
+		fi
+	done
 }
 
 
